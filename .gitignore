@@ -1,0 +1,14 @@
+# Python virtual environment
+.venv/
+
+# Byte-code files
+__pycache__/
+*.pyc
+
+# Editor/IDE specific files (optional, but common)
+#.vscode/
+
+# Specific directories to ignore
+sounds/tobeedited/
+
+# Add other files or directories to ignore as needed
