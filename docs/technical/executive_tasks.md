@@ -35,6 +35,11 @@
   - [x] Added type checks and fallback defaults for puzzle creation to ensure type safety
   - [x] Refactored high-complexity functions (`_create_puzzle_from_data`, `on_puzzle_solve`) into helpers for maintainability and extensibility
   - [x] Ensured all code changes are modular, extensible, and documented per project rules
+  - [x] Fixed missing `NarrativeThread` import in LLM handler
+  - [x] Added NetworkX dependency and resolved knowledge graph import errors
+  - [x] Updated all model references from 'goekdenizguelmez/JOSIEFIED-Qwen2.5:3b' to 'aethercorp'
+  - [x] Removed duplicate navigation_commands.py file (functionality exists in main commands)
+  - [x] All core modules now import successfully without errors
 - [ ] Create unit tests for all components
 - [ ] Set up CI/CD pipeline
 - [ ] Add code documentation
@@ -130,20 +135,36 @@
 - [ ] Implement adaptive difficulty
 
 ### LLM & NPC Integration
-- [ ] Set up LLM backend
-- [ ] Create entity personas
-  - [ ] Rusty (Mechanical companion)
-  - [ ] Dr. Voss (Fractured personality)
-  - [ ] Aetherial Scourge (Interface manipulator)
-  - [ ] SENTINEL (System warden)
-  - [ ] The Collective (Absorbed minds)
-  - [ ] PRODIGY (Child-like AI)
-  - [ ] Lazarus Protocol (Religious system)
-  - [ ] ECHO (Mirroring entity)
-- [ ] Implement knowledge graphs
-- [ ] Add context-aware prompts
-- [ ] Create safety filters
-- [ ] Design horror-specific responses
+- [x] Set up LLM backend
+  - [x] Configured Ollama integration with aethercorp model
+  - [x] Implemented fallback model support
+  - [x] Added async LLM call support
+  - [x] Fixed all import errors and model references
+- [x] Create entity personas
+  - [x] Rusty (Mechanical companion)
+  - [x] Dr. Voss (Fractured personality)
+  - [x] Aetherial Scourge (Interface manipulator)
+  - [x] SENTINEL (System warden)
+  - [x] The Collective (Absorbed minds)
+  - [x] PRODIGY (Child-like AI)
+  - [x] Lazarus Protocol (Religious system)
+  - [x] ECHO (Mirroring entity)
+- [x] Implement knowledge graphs
+  - [x] Created comprehensive KnowledgeGraph system with NetworkX
+  - [x] Implemented entity relationship tracking
+  - [x] Added narrative thread management
+  - [x] Integrated player action consequence tracking
+  - [x] Added dynamic story generation capabilities
+- [x] Add context-aware prompts
+  - [x] Implemented narrative context generation
+  - [x] Added role-specific content generation
+  - [x] Created adaptive hint system based on player progress
+  - [x] Integrated knowledge graph context into all LLM interactions
+- [x] Create safety filters
+- [x] Design horror-specific responses
+  - [x] Implemented corruption-aware content generation
+  - [x] Added psychological horror elements
+  - [x] Created dynamic narrative event system
 
 ### Narrative & Content
 - [ ] Create layered world structure
@@ -212,6 +233,18 @@
   - Imports for LLM functionality now use relative imports for compatibility
   - Puzzle creation logic now robust against missing or malformed data
   - High-complexity functions refactored for maintainability
+  - Fixed missing `NarrativeThread` import in LLM handler
+  - Added NetworkX dependency and resolved knowledge graph import errors
+  - Updated all model references from 'goekdenizguelmez/JOSIEFIED-Qwen2.5:3b' to 'aethercorp'
+  - Removed duplicate navigation_commands.py file (functionality exists in main commands)
 - Font loading, disclaimer, and role selection screens integrated with corruption effects
 - Procedural border/corruption effects, Rusty assistant, and all core horror systems are modular and extensible
+- **LLM Integration Complete:**
+  - Ollama backend configured with aethercorp model
+  - Comprehensive knowledge graph system implemented with NetworkX
+  - Dynamic narrative generation based on player actions and relationships
+  - Entity relationship tracking and narrative thread management
+  - Context-aware prompts and adaptive content generation
+  - All entity personas implemented and integrated
+  - Knowledge graph-LLM integration for contextual responses
 - Ready for further feature development, testing, and polish
