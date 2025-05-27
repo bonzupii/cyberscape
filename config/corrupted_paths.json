@@ -1,0 +1,43 @@
+{
+    "purifier": {
+        "corrupted_paths": [
+            "/secure/access_control.log",
+            "/audit/security_logs.conf",
+            "/backup/system_state.bak"
+        ],
+        "corruption_patterns": {
+            "access_control.log": "high",
+            "security_logs.conf": "medium",
+            "system_state.bak": "low"
+        }
+    },
+    "arbiter": {
+        "corrupted_paths": [
+            "/tools/network_scan.scan",
+            "/scans/vulnerability_report.rep",
+            "/reports/exploit_db.exp"
+        ],
+        "corruption_patterns": {
+            "network_scan.scan": "high",
+            "vulnerability_report.rep": "medium",
+            "exploit_db.exp": "low"
+        }
+    },
+    "ascendant": {
+        "corrupted_paths": [
+            "/malware/payload.bin",
+            "/exploits/backdoor.exe",
+            "/stolen/rootkit.dat"
+        ],
+        "corruption_patterns": {
+            "payload.bin": "high",
+            "backdoor.exe": "medium",
+            "rootkit.dat": "low"
+        }
+    },
+    "global_corrupted_paths": [
+        "/var/log/system.log",
+        "/etc/config/main.conf",
+        "/home/user/documents/notes.txt"
+    ]
+} 

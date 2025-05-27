@@ -1,0 +1,273 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Cyberscape Puzzle Schema",
+    "description": "Schema for defining puzzles in Cyberscape: Digital Dread",
+    "type": "object",
+    "required": ["puzzle_id", "type", "name", "description", "difficulty"],
+    "properties": {
+        "puzzle_id": {
+            "type": "string",
+            "description": "Unique identifier for the puzzle"
+        },
+        "type": {
+            "type": "string",
+            "enum": [
+                "sequence",
+                "cipher",
+                "file_manipulation",
+                "code_analysis",
+                "network",
+                "memory_reconstruction",
+                "system_load_balancer",
+                "binary_analysis",
+                "config_file"
+            ],
+            "description": "Type of puzzle"
+        },
+        "name": {
+            "type": "string",
+            "description": "Display name of the puzzle"
+        },
+        "description": {
+            "type": "string",
+            "description": "Detailed description of the puzzle"
+        },
+        "difficulty": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Difficulty level of the puzzle"
+        },
+        "corruption_effects": {
+            "type": "object",
+            "properties": {
+                "visual_corruption": {
+                    "type": "boolean",
+                    "description": "Whether visual corruption effects should be applied"
+                },
+                "audio_corruption": {
+                    "type": "boolean",
+                    "description": "Whether audio corruption effects should be applied"
+                },
+                "text_corruption": {
+                    "type": "boolean",
+                    "description": "Whether text corruption effects should be applied"
+                },
+                "corruption_level": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Base corruption level for this puzzle"
+                }
+            }
+        },
+        "hints": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "List of hints for the puzzle"
+        },
+        "solution": {
+            "type": "object",
+            "description": "Solution configuration specific to puzzle type",
+            "oneOf": [
+                {
+                    "title": "Sequence Puzzle Solution",
+                    "type": "object",
+                    "properties": {
+                        "sequence_prompt": {
+                            "type": "array",
+                            "items": {
+                                "oneOf": [
+                                    {"type": "number"},
+                                    {"type": "string"}
+                                ]
+                            }
+                        },
+                        "solution": {
+                            "type": "array",
+                            "items": {
+                                "oneOf": [
+                                    {"type": "number"},
+                                    {"type": "string"}
+                                ]
+                            }
+                        }
+                    }
+                },
+                {
+                    "title": "Cipher Puzzle Solution",
+                    "type": "object",
+                    "properties": {
+                        "ciphertext": {
+                            "type": "string"
+                        },
+                        "shift": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                {
+                    "title": "File Manipulation Puzzle Solution",
+                    "type": "object",
+                    "properties": {
+                        "target_file": {
+                            "type": "string"
+                        },
+                        "required_content": {
+                            "type": "string"
+                        },
+                        "success_message": {
+                            "type": "string"
+                        }
+                    }
+                },
+                {
+                    "title": "Code Analysis Puzzle Solution",
+                    "type": "object",
+                    "properties": {
+                        "target_file": {
+                            "type": "string"
+                        },
+                        "required_info": {
+                            "type": "string"
+                        },
+                        "success_message": {
+                            "type": "string"
+                        }
+                    }
+                },
+                {
+                    "title": "Network Puzzle Solution",
+                    "type": "object",
+                    "properties": {
+                        "network_map": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "start_node": {
+                            "type": "string"
+                        },
+                        "target_node": {
+                            "type": "string"
+                        },
+                        "success_message": {
+                            "type": "string"
+                        }
+                    }
+                },
+                {
+                    "title": "Memory Reconstruction Puzzle Solution",
+                    "type": "object",
+                    "properties": {
+                        "snippets": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "correct_order": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        },
+                        "max_attempts": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                {
+                    "title": "System Load Balancer Puzzle Solution",
+                    "type": "object",
+                    "properties": {
+                        "processes": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    },
+                                    "load": {
+                                        "type": "integer"
+                                    }
+                                }
+                            }
+                        },
+                        "correct_alloc": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        },
+                        "max_attempts": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                {
+                    "title": "Binary Analysis Puzzle Solution",
+                    "type": "object",
+                    "properties": {
+                        "binary_data": {
+                            "type": "string"
+                        },
+                        "pattern": {
+                            "type": "string"
+                        },
+                        "success_message": {
+                            "type": "string"
+                        }
+                    }
+                },
+                {
+                    "title": "Config File Puzzle Solution",
+                    "type": "object",
+                    "properties": {
+                        "config_file_path": {
+                            "type": "string"
+                        },
+                        "key_phrase": {
+                            "type": "string"
+                        },
+                        "success_message": {
+                            "type": "string"
+                        }
+                    }
+                }
+            ]
+        },
+        "rewards": {
+            "type": "object",
+            "properties": {
+                "corruption_reduction": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Amount of corruption to reduce upon solving"
+                },
+                "unlock_files": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "List of files to unlock upon solving"
+                },
+                "story_events": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "List of story events to trigger upon solving"
+                }
+            }
+        }
+    }
+} 

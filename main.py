@@ -1,127 +1,79 @@
-import pygame
+#!/usr/bin/env python3
+"""
+Cyberscape: Digital Dread - Unified Game Entry Point
+
+This script combines the main entry logic and the core game loop into a single entry point.
+"""
+
+import sys
+import logging
 import random
-from game_state import game_state_manager, STATE_DISCLAIMER, STATE_MAIN_TERMINAL, STATE_MINIGAME, STATE_MSFCONSOLE, STATE_ROLE_SELECTION, STATE_PUZZLE_ACTIVE
-from commands_config import COMMAND_ACCESS, ROLE_WHITE_HAT, ROLE_GREY_HAT, ROLE_BLACK_HAT # Import from new config
-from terminal_renderer import Terminal, render_text_line as render_text # render_text used for disclaimer
-from effects import set_theme, get_current_theme, THEMES, EffectManager # For theme command and effects
-# Import command processing functions and handler dictionaries
-from command_handler import (
-    process_main_terminal_command,
-    process_msfconsole_command,
-    MAIN_COMMAND_HANDLERS, # Import the handler dict
-    MSF_COMMAND_HANDLERS   # Import the handler dict
-)
-# Remove old MSF tab completion import: handle_msfconsole_tab_completion
-from puzzle_manager import PuzzleManager # Import PuzzleManager
-from completion_handler import CompletionHandler # Import the new handler
-# game_state constants like STATE_MAIN_TERMINAL, STATE_MSFCONSOLE are already imported from game_state
+import time
+import math
+from pathlib import Path
 
+from src.core.effects import get_random_blip, corrupt_line
 
-# --- Constants ---
+import pygame
+import pygame.mixer
+
+# --- Project Root Setup ---
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+# --- Import Game Components ---
+from src.core.commands import MainTerminalHandler
+from src.core.effects import EffectManager
+from src.core.filesystem import FileSystemHandler
+from src.core.llm import LLMHandler
+from src.audio.manager import AudioManager
+from src.core.persistence import PersistenceManager
+from src.puzzle.manager import PuzzleManager
+from src.story.manager import StoryManager
+from src.ui.terminal import TerminalRenderer
+from src.ui.terminal_integration import create_terminal_renderer
+
+# --- Logging Setup ---
+def setup_logging():
+    log_dir = project_root / "data" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[
+            logging.FileHandler(log_dir / "game.log"),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+
+# --- Game Constants ---
 WINDOW_WIDTH = 1280
 WINDOW_HEIGHT = 720
 WINDOW_TITLE = "Cyberscape: Digital Dread"
 FPS = 60
 
-# --- Colors ---
-BLACK = (0, 0, 0)
-# WHITE = (255, 255, 255) # Retained for reference if needed later
- 
-# --- Pygame Initialization ---
-pygame.init()
-pygame.mixer.init() # Initialize the mixer
-screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.RESIZABLE)
-pygame.display.set_caption(WINDOW_TITLE)
-pygame.key.set_repeat(500, 50) # Enable key repeat: 500ms delay, 50ms interval
-clock = pygame.time.Clock()
-
-# --- Sound Effects ---
-keypress_sound = None
-try:
-    keypress_sound = pygame.mixer.Sound("sounds/keypress.wav")
-    # print("Successfully loaded sounds/keypress.wav") # Keep for debug
-except pygame.error as e:
-    # print(f"Warning: Could not load sounds/keypress.wav - {e}") # Keep for debug
-    # print("Game will continue without keypress sound effect.") # Keep for debug
-    pass # Silently continue if sound fails to load
-
-# --- Disclaimer Screen Fonts ---
-NEW_FONT_NAME = "OpenDyslexicMono-Regular.otf" # Added by user
-# MONO_FONT_PREFS = ['Consolas', 'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', 'monospace'] # Retained for fallback reference
-DISCLAIMER_FONT_SIZE_LARGE = 26 # Adjusted from 32
-DISCLAIMER_FONT_SIZE_MEDIUM = 13 # Adjusted from 20 (approx 35% reduction for skull)
-DISCLAIMER_FONT_SIZE_SMALL = 16 # Adjusted from 20
+# --- Font Loading and Disclaimer/Role Selection Rendering ---
+NEW_FONT_NAME = "OpenDyslexicMono-Regular.otf"
+DISCLAIMER_FONT_SIZE_LARGE = 26
+DISCLAIMER_FONT_SIZE_MEDIUM = 13
+DISCLAIMER_FONT_SIZE_SMALL = 16
 
 def load_monospace_font(size):
     font_to_load = None
     try:
-        # Attempt to load the new font directly
         font_to_load = pygame.font.Font(NEW_FONT_NAME, size)
-        # print(f"Disclaimer: Successfully loaded font '{NEW_FONT_NAME}' with size {size}.") # Keep for debug
         return font_to_load
-    except pygame.error as e:
-        # print(f"Disclaimer: Warning - Could not load '{NEW_FONT_NAME}' with size {size} ({e}).") # Keep for debug
-        # Fallback to Pygame's default font if the new one fails
+    except pygame.error:
         try:
             font_to_load = pygame.font.Font(None, size)
-            # print(f"Disclaimer: Successfully loaded Pygame default font with size {size} as fallback.") # Keep for debug
             return font_to_load
         except pygame.error as e_fallback:
-            # print(f"Disclaimer: Critical error - Could not load Pygame default font with size {size} ({e_fallback}).") # Keep for debug
-            # This is a critical failure; the game might not be able to render text.
-            # Consider raising an exception or handling it more gracefully if this occurs.
-            pygame.quit() # Quit pygame if no font can be loaded at all
+            pygame.quit()
             raise RuntimeError(f"Failed to initialize any font for disclaimer (size {size}).") from e_fallback
 
-disclaimer_mono_font_large = load_monospace_font(DISCLAIMER_FONT_SIZE_LARGE)
-disclaimer_mono_font_medium = load_monospace_font(DISCLAIMER_FONT_SIZE_MEDIUM)
-disclaimer_mono_font_small = load_monospace_font(DISCLAIMER_FONT_SIZE_SMALL)
-
-
-# --- Game State ---
-# GameStateManager is initialized in game_state.py
-# Initial state is STATE_DISCLAIMER
- 
-# --- Terminal Instance ---
-terminal = Terminal(WINDOW_WIDTH, WINDOW_HEIGHT) # Instantiate Terminal first
-
-# --- File System Handler (accessed via terminal) ---
-# fs_handler is initialized within Terminal, so we access it via terminal.fs_handler
-
-# --- Command Configurations (for CompletionHandler) ---
-# Combine command handlers for the completion handler
-command_configs_for_completion = {
-    'main': MAIN_COMMAND_HANDLERS,
-    'msf': MSF_COMMAND_HANDLERS
-    # Add puzzle context commands if they have a separate handler dict later
-}
-
-# --- Completion Handler ---
-completion_handler = CompletionHandler(
-    game_state_manager=game_state_manager,
-    file_system_handler=terminal.fs_handler, # Pass the handler from the terminal instance
-    command_configs=command_configs_for_completion
-)
-
-# --- Pass Completion Handler to Terminal ---
-terminal.set_completion_handler(completion_handler) # Add this method to Terminal class
-
-# --- Initial boot messages ---
-terminal.add_line("Cyberscape: Digital Dread - Booting...", style_key='highlight')
-terminal.add_line("System Initialized.", style_key='success')
-terminal.add_line("Waiting for user acknowledgement of disclaimer...")
-
-# --- Effect Manager ---
-effect_manager = EffectManager(terminal) # Pass the terminal instance
-
-# --- Puzzle Manager ---
-puzzle_manager = PuzzleManager() # Instantiate PuzzleManager
-
-# --- ASCII Skull Art for Disclaimer ---
-# Note: Leading spaces for the first line of the skull art use an invisible character
-# "‎" to ensure correct rendering alignment.
 SKULL_DETAILED_FRAME_CLOSED = r"""
-‎ ‎ ‎ ‎ ‎ .----.
+     .----.
   .-"      "-.
  /            \
 |              |
@@ -133,10 +85,11 @@ SKULL_DETAILED_FRAME_CLOSED = r"""
   | \IIIIII/ |
   \          /
    `--------`
-                      
+
 """
+#invisible character, might need it later, don't need right now: ‎
 SKULL_DETAILED_FRAME_OPEN = r"""
-‎ ‎ ‎ ‎ ‎ .----.
+     .----.
   .-"      "-.
  /            \
 |              |
@@ -150,427 +103,880 @@ SKULL_DETAILED_FRAME_OPEN = r"""
   \          /
    `--------`
 """
-# Process skull frames carefully to ensure consistent line counts and preserve alignment
-skull_frame_lines_closed_raw = SKULL_DETAILED_FRAME_CLOSED.strip().split('\n')
-skull_frame_lines_open_raw = SKULL_DETAILED_FRAME_OPEN.strip().split('\n')
 
-skull_frame_lines_closed = [line.rstrip() for line in skull_frame_lines_closed_raw]
-skull_frame_lines_open = [line.rstrip() for line in skull_frame_lines_open_raw]
+def render_text(surface, text, pos, color, font):
+    if font is None:
+        return
+    text_surface = font.render(text, True, color)
+    surface.blit(text_surface, pos)
 
-# Pad the shorter frame to match the length of the longer one
-max_lines = max(len(skull_frame_lines_closed), len(skull_frame_lines_open))
+def render_disclaimer_screen(screen, corruption_level, disclaimer_mono_font_medium, disclaimer_mono_font_small, skull_open: bool = False, border_manager=None, corruption_anim_frame=0, border_anim_phase=0.0):
+    # Fixed grid size
+    GRID_COLS = 92
+    GRID_ROWS = 28
+    # Enforce sensible minimum window size
+    min_width, min_height = 800, 400
+    width = max(screen.get_width(), min_width)
+    height = max(screen.get_height(), min_height)
+    # Define small_window_mode and normal_font_size at the top so they're always available
+    small_window_mode = (width < 600 or height < 400)
+    normal_font_size = 10 if small_window_mode else 12
+    cell_width = width / GRID_COLS
+    cell_height = height / GRID_ROWS
+    BLACK = (0, 0, 0)
+    CORRUPTION_CHARS = "!@#$%^&*()_+[];',./<>?:{}|`~" + "¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿" + "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞß"
+    screen.fill(BLACK)
 
-while len(skull_frame_lines_closed) < max_lines:
-    skull_frame_lines_closed.append("")
-while len(skull_frame_lines_open) < max_lines:
-    skull_frame_lines_open.append("")
- 
-skull_frames = [skull_frame_lines_closed, skull_frame_lines_open]
-current_skull_frame_index = 0 # Initialize skull animation index
-skull_animation_timer = 0
-SKULL_ANIMATION_INTERVAL = 350 # milliseconds
-GLITCH_CHARS = ['*', '#', '$', '%', '&', '?', '§', '!', '~', '@', '^']
-CHARACTER_CORRUPTION_CHANCE = 0.03 # 3% chance per character
+    # --- Procedural Border: align to grid edges ---
+    grid = [[" " for _ in range(GRID_COLS)] for _ in range(GRID_ROWS)]
+    # --- UTF-8/ASCII border at grid edges ---
+    # Single line: ─ │ ┌ ┐ └ ┘
+    # Double line: ═ ║ ╔ ╗ ╚ ╝
+    for y in range(GRID_ROWS):
+        for x in range(GRID_COLS):
+            # Corners
+            if y == 0 and x == 0:
+                grid[y][x] = "┌"
+            elif y == 0 and x == GRID_COLS - 1:
+                grid[y][x] = "┐"
+            elif y == GRID_ROWS - 1 and x == 0:
+                grid[y][x] = "└"
+            elif y == GRID_ROWS - 1 and x == GRID_COLS - 1:
+                grid[y][x] = "┘"
+            # Top/bottom edges
+            elif y == 0 or y == GRID_ROWS - 1:
+                grid[y][x] = "─"
+            # Left/right edges
+            elif x == 0 or x == GRID_COLS - 1:
+                grid[y][x] = "│"
 
-# --- Main Game Loop ---
-running = True
-while running:
-    dt = clock.tick(FPS) # Delta time in milliseconds
+    # --- Skull as monospaced grid, centered in grid ---
+    skull_font_path = "assets/fonts/OpenDyslexicMono-Regular.otf"
+    try:
+        skull_font = pygame.font.Font(skull_font_path, 12)
+    except Exception:
+        skull_font = pygame.font.SysFont('monospace', 12)
+    skull_frame = SKULL_DETAILED_FRAME_OPEN if skull_open else SKULL_DETAILED_FRAME_CLOSED
+    skull_lines = [line.rstrip('\n') for line in skull_frame.split('\n')]
+    skull_grid_width = max(len(line) for line in skull_lines)
+    skull_grid_height = len(skull_lines)
+    skull_start_col = (GRID_COLS - skull_grid_width) // 2
+    # Move skull up, leave at least 2 rows above, and 2 rows below before text
+    skull_start_row = 2
+    for row_idx, line in enumerate(skull_lines):
+        for col_idx, ch in enumerate(line):
+            if ch and not ch.isspace() and ch.isprintable():
+                grid[skull_start_row + row_idx][skull_start_col + col_idx] = ("SKULL", ch)
+    skull_end_row = skull_start_row + skull_grid_height - 1
 
-    # --- Skull Animation Update (only for disclaimer state) ---
-    if game_state_manager.is_state(STATE_DISCLAIMER):
-        skull_animation_timer += dt
-        if skull_animation_timer >= SKULL_ANIMATION_INTERVAL:
-            skull_animation_timer %= SKULL_ANIMATION_INTERVAL
-            current_skull_frame_index = (current_skull_frame_index + 1) % len(skull_frames)
-
-    # --- Event Handling ---
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-        elif event.type == pygame.VIDEORESIZE:
-            WINDOW_WIDTH = event.w
-            WINDOW_HEIGHT = event.h
-            screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.RESIZABLE)
-            terminal.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
-        
-        # Play keypress sound for any keydown event, if sound is loaded
-        if event.type == pygame.KEYDOWN and keypress_sound:
-            keypress_sound.play()
-
-        if game_state_manager.is_state(STATE_DISCLAIMER):
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
-                    # Reset skull animation for next time disclaimer is shown (if ever)
-                    current_skull_frame_index = 0
-                    skull_animation_timer = 0
-                    game_state_manager.change_state(STATE_ROLE_SELECTION)
-                    terminal.clear_buffer() # Clear boot messages
-                    terminal.add_line("Ethical Protocols Acknowledged. System Integrity Nominal.", style_key='success')
-                    terminal.add_line("Initializing User Profile Interface...", style_key='highlight')
-                    terminal.add_line(" ")
-                    terminal.add_line("Choose Your Path:", style_key='highlight')
-                    terminal.add_line("-------------------", style_key='highlight')
-                    terminal.add_line("1. White Hat - The Defender. Uphold the light, protect the innocent.", style_key='success')
-                    terminal.add_line("                 (Access to defensive tools, system analysis, integrity checks)", style_key='comment')
-                    terminal.add_line("2. Grey Hat  - The Balance. Walk the line, for the greater good... or profit.", style_key='default_fg')
-                    terminal.add_line("                 (Versatile toolkit, access to restricted systems, information brokering)", style_key='comment')
-                    terminal.add_line("3. Black Hat - The Shadow. Embrace the chaos, exploit the vulnerabilities.", style_key='error')
-                    terminal.add_line("                 (Offensive tools, stealth mechanics, network exploitation)", style_key='comment')
-                    terminal.add_line("-------------------")
-                    terminal.add_line("Enter number (1-3) to select your operational alignment:")
-                elif event.key == pygame.K_ESCAPE: # Allow exit from disclaimer
-                    running = False
-        elif game_state_manager.is_state(STATE_ROLE_SELECTION):
-            if event.type == pygame.KEYDOWN:
-                role_chosen = None
-                role_name_str = ""
-                if event.key == pygame.K_1 or event.key == pygame.K_KP_1:
-                    role_chosen = ROLE_WHITE_HAT
-                    role_name_str = "White Hat"
-                elif event.key == pygame.K_2 or event.key == pygame.K_KP_2:
-                    role_chosen = ROLE_GREY_HAT
-                    role_name_str = "Grey Hat"
-                elif event.key == pygame.K_3 or event.key == pygame.K_KP_3:
-                    role_chosen = ROLE_BLACK_HAT
-                    role_name_str = "Black Hat"
-                elif event.key == pygame.K_ESCAPE:
-                    running = False
-
-                if role_chosen:
-                    game_state_manager.set_player_role(role_chosen)
-                    terminal.clear_buffer()
-                    terminal.add_line(f"Operational Alignment: {role_name_str} confirmed.", style_key='success')
-
-                    if role_chosen == ROLE_WHITE_HAT:
-                        terminal.set_username("guardian")
-                        terminal.set_hostname("aegis-01")
-                        terminal.add_line("System protocols updated. Defensive measures online.", style_key='success')
-                        terminal.add_line("Your mission: Protect the innocent. Uphold the light.", style_key='highlight')
-                    elif role_chosen == ROLE_GREY_HAT:
-                        terminal.set_username("shadow_walker")
-                        terminal.set_hostname("nexus-7")
-                        terminal.add_line("Network access rerouted. Anonymity cloak engaged.", style_key='highlight')
-                        terminal.add_line("The lines blur. Your path is your own to forge.", style_key='default_fg')
-                    elif role_chosen == ROLE_BLACK_HAT:
-                        terminal.set_username("void_reaver")
-                        terminal.set_hostname("hades-net")
-                        terminal.add_line("Firewalls bypassed. Root access granted. The system is yours.", style_key='error')
-                        terminal.add_line("Embrace the chaos. Exploit the vulnerabilities.", style_key='error')
-                    
-                    # Display background info
-                    background = game_state_manager.get_player_attribute('background')
-                    motivation = game_state_manager.get_player_attribute('motivation')
-                    if background:
-                        terminal.add_line(f"Background: {background}", style_key='comment')
-                    if motivation:
-                        terminal.add_line(f"Motivation: {motivation}", style_key='comment')
-
-                    terminal.add_line(" ")
-                    terminal.add_line("Welcome to the Cyberscape.", style_key='highlight')
-                    terminal.add_line("Type 'help' for a list of commands.")
-                    game_state_manager.change_state(STATE_MAIN_TERMINAL)
-        elif game_state_manager.is_state(STATE_MAIN_TERMINAL):
-            # If an effect is active, it might consume some input or prevent normal terminal input
-            if effect_manager.is_effect_active():
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE: # Allow skipping current effect with ESC
-                        effect_manager.skip_current_effect()
-                    # Other input generally ignored during an effect sequence
-            else: # No effect active, normal terminal input
-                command_entered = None
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        running = False # Exit game
-                    elif event.key == pygame.K_PAGEUP:
-                        terminal.scroll_up()
-                    elif event.key == pygame.K_PAGEDOWN:
-                        terminal.scroll_down()
-                    elif event.key == pygame.K_HOME:
-                        terminal.scroll_offset = 0
-                    elif event.key == pygame.K_END:
-                        terminal.scroll_to_bottom()
-                    else:
-                        # This is where text input and tab/enter/backspace are handled
-                        command_entered = terminal.handle_input(event)
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    if event.button == 4: # Scroll up
-                        terminal.scroll_up(amount=3)
-                    elif event.button == 5: # Scroll down
-                        terminal.scroll_down(amount=3)
-
-                if command_entered is not None:
-                    # Call the extracted command processor, now passing puzzle_manager
-                    should_continue, screen_action = process_main_terminal_command(command_entered, terminal, game_state_manager, effect_manager, puzzle_manager)
-                    if not should_continue:
-                        running = False # Command handler signaled to quit
-                    
-                    if screen_action:
-                        action_type = screen_action.get('type')
-                        if action_type == 'set_resolution':
-                            new_w = screen_action.get('width')
-                            new_h = screen_action.get('height')
-                            if new_w and new_h:
-                                WINDOW_WIDTH = new_w
-                                WINDOW_HEIGHT = new_h
-                                screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.RESIZABLE)
-                                terminal.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
-                                terminal.add_line(f"Screen resolution set to {WINDOW_WIDTH}x{WINDOW_HEIGHT}.", style_key='success')
-                        elif action_type == 'fullscreen':
-                            try:
-                                display_info = pygame.display.Info()
-                                WINDOW_WIDTH = display_info.current_w
-                                WINDOW_HEIGHT = display_info.current_h
-                                screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.FULLSCREEN | pygame.RESIZABLE)
-                                terminal.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
-                                terminal.add_line(f"Switched to fullscreen mode ({WINDOW_WIDTH}x{WINDOW_HEIGHT}).", style_key='success')
-                            except pygame.error as e:
-                                terminal.add_line(f"Error switching to fullscreen: {e}", style_key='error')
-                                WINDOW_WIDTH = 1280 # Fallback
-                                WINDOW_HEIGHT = 720
-                                screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.RESIZABLE)
-                                terminal.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
-                        elif action_type == 'windowed':
-                            current_w, current_h = screen.get_size()
-                            if current_w > 1920 or current_h > 1080: # Sensible default if coming from large fullscreen
-                                WINDOW_WIDTH = 1280
-                                WINDOW_HEIGHT = 720
-                            # Else, WINDOW_WIDTH and WINDOW_HEIGHT should be the last user-set windowed size or default
-                            try:
-                                screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.RESIZABLE)
-                                terminal.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
-                                terminal.add_line(f"Switched to windowed mode ({WINDOW_WIDTH}x{WINDOW_HEIGHT}).", style_key='success')
-                            except pygame.error as e:
-                                terminal.add_line(f"Error switching to windowed mode: {e}", style_key='error')
- 
-                # pygame.TEXTINPUT event is handled by terminal.handle_input via event.unicode
-        elif game_state_manager.is_state(STATE_PUZZLE_ACTIVE):
-            command_entered = None
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    # Allow exiting puzzle with ESCAPE, then process as 'exit_puzzle' command
-                    command_entered = "exit_puzzle"
-                elif event.key == pygame.K_PAGEUP:
-                    terminal.scroll_up()
-                elif event.key == pygame.K_PAGEDOWN:
-                    terminal.scroll_down()
-                elif event.key == pygame.K_HOME:
-                    terminal.scroll_offset = 0
-                elif event.key == pygame.K_END:
-                    terminal.scroll_to_bottom()
-                else:
-                    command_entered = terminal.handle_input(event)
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 4: # Scroll up
-                    terminal.scroll_up(amount=3)
-                elif event.button == 5: # Scroll down
-                    terminal.scroll_down(amount=3)
-            
-            if command_entered is not None:
-                # Process puzzle-related commands (solve, hint, exit_puzzle)
-                should_continue, screen_action = process_main_terminal_command(command_entered, terminal, game_state_manager, effect_manager, puzzle_manager)
-                if not should_continue:
-                    running = False
-                # Screen actions are unlikely from puzzle commands but handle if necessary
-                if screen_action:
-                    # (Handle screen actions similarly to STATE_MAIN_TERMINAL if any are defined for puzzle commands)
-                    pass # Placeholder for now
-
-        elif game_state_manager.is_state(STATE_MSFCONSOLE):
-            # MSFCONSOLE Event Handling
-            msf_command_entered = None
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    terminal.clear_prompt_override()
-                    game_state_manager.change_state(STATE_MAIN_TERMINAL)
-                    terminal.clear_buffer()
-                    terminal.add_line("Exited msfconsole.", style_key="highlight")
-                    terminal.add_line("Type 'help' for a list of commands.")
-                elif event.key == pygame.K_PAGEUP:
-                    terminal.scroll_up()
-                elif event.key == pygame.K_PAGEDOWN:
-                    terminal.scroll_down()
-                elif event.key == pygame.K_HOME:
-                    terminal.scroll_offset = 0
-                elif event.key == pygame.K_END:
-                    terminal.scroll_to_bottom()
-                # Tab completion is now handled within terminal.handle_input
-                # elif event.key == pygame.K_TAB:
-                #     # Old MSF handler removed
-                #     pass
-                else:
-                    msf_command_entered = terminal.handle_input(event)
-            elif event.type == pygame.MOUSEBUTTONDOWN: # Add this block for MSFCONSOLE
-                if event.button == 4: # Scroll up
-                    terminal.scroll_up(amount=3)
-                elif event.button == 5: # Scroll down
-                    terminal.scroll_down(amount=3)
-            
-            if msf_command_entered is not None:
-                process_msfconsole_command(msf_command_entered, terminal, game_state_manager, effect_manager)
-    # --- Game Logic Updates ---
-    # Update cursor only for states that use it for input
-    if game_state_manager.is_state(STATE_MAIN_TERMINAL) or \
-       game_state_manager.is_state(STATE_MSFCONSOLE) or \
-       game_state_manager.is_state(STATE_PUZZLE_ACTIVE):
-        # For puzzle state, cursor should be active unless an effect is running (e.g. typing out feedback)
-        if not effect_manager.is_effect_active() or \
-           game_state_manager.is_state(STATE_MSFCONSOLE) or \
-           (game_state_manager.is_state(STATE_PUZZLE_ACTIVE) and not effect_manager.is_effect_active()):
-            terminal.update_cursor(dt)
-    
-    # Update effects regardless of state, if they are active (unless a state specifically disallows it)
-    effect_manager.update(dt)
-
-
-    # --- Rendering ---
-    screen.fill(BLACK) # Clear screen with black (can be redundant if terminal fills)
-
-    if game_state_manager.is_state(STATE_DISCLAIMER):
-        # Fonts are now pre-loaded: disclaimer_mono_font_large, disclaimer_mono_font_medium, disclaimer_mono_font_small
-
-        # --- Render Skull ---
-        skull_y_start = 30
-        skull_color = (0, 200, 50) # Glitchy green
-        current_skull_art_lines = skull_frames[current_skull_frame_index]
-        
-        # Calculate max width of skull lines for centering
-        max_skull_line_width = 0
-        if current_skull_art_lines:
-             max_skull_line_width = max(disclaimer_mono_font_medium.size(line)[0] for line in current_skull_art_lines)
-        
-        skull_x_start = WINDOW_WIDTH // 2 - max_skull_line_width // 2
-        
-        for i, line in enumerate(current_skull_art_lines):
-            line_y_pos = skull_y_start + i * disclaimer_mono_font_medium.get_linesize()
-            if i == 0: # Special handling for the first line
-                content_part = line.lstrip()
-                # Get the original leading whitespace string
-                num_leading_spaces = len(line) - len(content_part)
-                leading_spaces_original_str = line[:num_leading_spaces]
-                
-                # Calculate the visual width of these leading spaces
-                leading_spaces_width = 0
-                if leading_spaces_original_str: # Ensure there are spaces to measure
-                    leading_spaces_width = disclaimer_mono_font_medium.size(leading_spaces_original_str)[0]
-                
-                # Render the content part, visually offset by its original leading spaces, from skull_x_start
-                render_x_position = skull_x_start + leading_spaces_width
-                render_text(screen, content_part, (render_x_position, line_y_pos), fg_color=skull_color, font=disclaimer_mono_font_medium)
+    # --- Disclaimer text block, centered and wrapped in grid ---
+    disclaimer_messages = [
+        "This game is a work of fiction and intended for mature audiences.",
+        "It explores themes of horror and hacking.",
+        " ",
+        "The activities depicted, if performed in real life, can have serious",
+        "legal, ethical, and personal consequences.",
+        " ",
+        "This simulation does not endorse or encourage any illegal or unethical behavior.",
+        "Always act responsibly and ethically online and offline.",
+        " ",
+        "Player discretion is strongly advised."
+    ]
+    corruption_level = 0.32  # Slightly reduced corruption for disclaimer text
+    # Word wrap to grid width minus padding
+    text_block_cols = GRID_COLS - 8
+    wrapped_lines = []
+    for line in disclaimer_messages:
+        words = line.split()
+        current_line = ""
+        for word in words:
+            test_line = (current_line + " " if current_line else "") + word
+            if len(test_line) > text_block_cols:
+                wrapped_lines.append(current_line)
+                current_line = word
             else:
-                # Render other lines normally, their leading spaces are respected
-                render_text(screen, line, (skull_x_start, line_y_pos), fg_color=skull_color, font=disclaimer_mono_font_medium)
+                current_line = test_line
+        if current_line:
+            wrapped_lines.append(current_line)
+        if line.strip() == "":
+            wrapped_lines.append("")
+    # Center text block vertically below skull
+    text_block_height = len(wrapped_lines)
+    text_block_start_row = skull_start_row + skull_grid_height + 2
+
+    # Intrusive/profane blips for corruption are now imported from effects.py
+
+    # Improved text wrapping and vertical spacing
+    # Only wrap to available width inside border
+    text_block_cols = GRID_COLS - 6
+    wrapped_lines = []
+    for line in disclaimer_messages:
+        words = line.split()
+        current_line = ""
+        for word in words:
+            test_line = (current_line + " " if current_line else "") + word
+            if len(test_line) > text_block_cols:
+                wrapped_lines.append(current_line)
+                current_line = word
+            else:
+                current_line = test_line
+        if current_line:
+            wrapped_lines.append(current_line)
+        if line.strip() == "":
+            wrapped_lines.append("")
+
+    # Insert rare, fixed-length blips (never break line structure) and persist them for multiple frames
+    # We'll use a global/static cache for blip state per line index and line content hash
+    if not hasattr(render_disclaimer_screen, "blip_cache"):
+        render_disclaimer_screen.blip_cache = {}
+    blip_cache = render_disclaimer_screen.blip_cache
+    BLIP_FRAMES = 48  # Number of frames a blip should persist (tweak for ~2x longer visibility)
+
+    # Clear blip cache if line count or content changes
+    current_hash = hash(tuple(wrapped_lines))
+    if getattr(render_disclaimer_screen, "blip_cache_hash", None) != current_hash:
+        blip_cache.clear()
+        render_disclaimer_screen.blip_cache_hash = current_hash
+
+    visible_lines = []
+    for idx, wline in enumerate(wrapped_lines):
+        blip = None
+        line_hash = hash(wline)
+        cache_entry = blip_cache.get(idx, None)
+        # If a blip is cached, still within its lifetime, and for the same line content, reuse it
+        if (
+            cache_entry
+            and corruption_anim_frame - cache_entry["frame"] < BLIP_FRAMES
+            and cache_entry.get("line_hash") == line_hash
+        ):
+            start, length, blip_word = cache_entry["start"], cache_entry["length"], cache_entry["word"]
+            wline = (
+                wline[:start] +
+                blip_word +
+                wline[start + len(blip_word):]
+            )
+            blip = (start, len(blip_word))
+        else:
+            # Possibly insert a new blip
+            if wline.strip() and random.random() < 0.10:
+                blip_candidate = get_random_blip()
+                if len(wline) >= len(blip_candidate):
+                    max_start = len(wline) - len(blip_candidate)
+                    start = random.randint(0, max_start)
+                    wline = (
+                        wline[:start] +
+                        blip_candidate +
+                        wline[start + len(blip_candidate):]
+                    )
+                    blip = (start, len(blip_candidate))
+                    # Cache this blip with the current frame and line hash
+                    blip_cache[idx] = {
+                        "start": start,
+                        "length": len(blip_candidate),
+                        "word": blip_candidate,
+                        "frame": corruption_anim_frame,
+                        "line_hash": hash(wline)
+                    }
+                else:
+                    # No blip inserted, clear cache for this line
+                    if idx in blip_cache:
+                        del blip_cache[idx]
+            else:
+                # No blip inserted, clear cache for this line
+                if idx in blip_cache:
+                    del blip_cache[idx]
+        visible_lines.append((wline, blip))
+
+    # Calculate available rows for text, leave at least 2 rows above and below
+    min_spacing = 1
+    max_text_lines = GRID_ROWS - (skull_end_row + 2 + 3)  # 2 after skull, 3 for prompt/border
+    if len(visible_lines) + min_spacing * (len(visible_lines) - 1) > max_text_lines:
+        # Reduce spacing if needed
+        min_spacing = 0
+    text_block_start_row = skull_end_row + 2
+    grid_row = text_block_start_row
+
+    for wline, blip in visible_lines:
+        if grid_row >= GRID_ROWS - 3:
+            break
+        # Use centralized corruption logic from effects.py
+        rng = random.Random(corruption_anim_frame + idx)
+        corrupted_line = corrupt_line(wline, corruption_level, blip_range=blip, rng=rng)
+        start_col = max(1, min((GRID_COLS - len(corrupted_line)) // 2, GRID_COLS - 2))
+        for j, ch in enumerate(corrupted_line):
+            grid_col = start_col + j
+            if grid_col < 1 or grid_col >= GRID_COLS - 1:
+                continue
+            # Render blips in red, rest as normal
+            if blip and blip[0] <= j < blip[0] + blip[1]:
+                grid[grid_row][grid_col] = ("BLIP", ch)
+            else:
+                grid[grid_row][grid_col] = ("TEXT", ch)
+        grid_row += 1 + min_spacing
+
+    # --- Prompt at the bottom, centered ---
+    prompt = "Press any key to continue..."
+    prompt_row = GRID_ROWS - 3
+    prompt_start_col = max(1, min((GRID_COLS - len(prompt)) // 2, GRID_COLS - 2))
+    for j, ch in enumerate(prompt):
+        grid_col = prompt_start_col + j
+        if grid_col < 1 or grid_col >= GRID_COLS - 1:
+            continue
+        grid[prompt_row][grid_col] = ("PROMPT", ch)
+
+    # --- Render the grid ---
+    # Always render single line border, then overlay double line border with breathing effect
+    for row in range(GRID_ROWS):
+        for col in range(GRID_COLS):
+            # For last column/row, align to window edge
+            if col == GRID_COLS - 1:
+                x = width - cell_width
+            else:
+                x = col * cell_width
+            if row == GRID_ROWS - 1:
+                y = height - cell_height
+            else:
+                y = row * cell_height
+            cell = grid[row][col]
+            # Draw single line border at edges
+            border_ch = None
+            if row == 0 and col == 0:
+                border_ch = "┌"
+            elif row == 0 and col == GRID_COLS - 1:
+                border_ch = "┐"
+            elif row == GRID_ROWS - 1 and col == 0:
+                border_ch = "└"
+            elif row == GRID_ROWS - 1 and col == GRID_COLS - 1:
+                border_ch = "┘"
+            elif row == 0 or row == GRID_ROWS - 1:
+                border_ch = "─"
+            elif col == 0 or col == GRID_COLS - 1:
+                border_ch = "│"
+            if border_ch:
+                border_font_size = 9 if small_window_mode else 12
+                surf = pygame.font.SysFont('monospace', border_font_size).render(border_ch, True, (120, 120, 120))
+                # For last col/row, right/bottom align the character
+                if col == GRID_COLS - 1:
+                    surf_rect = surf.get_rect(right=x + cell_width, centery=y + cell_height / 2)
+                elif row == GRID_ROWS - 1:
+                    surf_rect = surf.get_rect(centerx=x + cell_width / 2, bottom=y + cell_height)
+                else:
+                    surf_rect = surf.get_rect(center=(x + cell_width / 2, y + cell_height / 2))
+                screen.blit(surf, surf_rect)
+            # Overlay double line border with breathing effect (faster)
+            double_border_ch = None
+            if row == 0 and col == 0:
+                double_border_ch = "╔"
+            elif row == 0 and col == GRID_COLS - 1:
+                double_border_ch = "╗"
+            elif row == GRID_ROWS - 1 and col == 0:
+                double_border_ch = "╚"
+            elif row == GRID_ROWS - 1 and col == GRID_COLS - 1:
+                double_border_ch = "╝"
+            elif row == 0 or row == GRID_ROWS - 1:
+                double_border_ch = "═"
+            elif col == 0 or col == GRID_COLS - 1:
+                double_border_ch = "║"
+            if double_border_ch:
+                pulse = 0.5 + 0.5 * math.sin(time.time() * 2.5)
+                overlay_alpha = int(180 * pulse)
+                overlay_color = (200, 80, 80)
+                overlay_font_size = 9 if small_window_mode else 12
+                overlay_font = pygame.font.SysFont('monospace', overlay_font_size)
+                overlay_surf = overlay_font.render(double_border_ch, True, overlay_color)
+                overlay_surf.set_alpha(overlay_alpha)
+                if col == GRID_COLS - 1:
+                    overlay_rect = overlay_surf.get_rect(right=x + cell_width, centery=y + cell_height / 2)
+                elif row == GRID_ROWS - 1:
+                    overlay_rect = overlay_surf.get_rect(centerx=x + cell_width / 2, bottom=y + cell_height)
+                else:
+                    overlay_rect = overlay_surf.get_rect(center=(x + cell_width / 2, y + cell_height / 2))
+                screen.blit(overlay_surf, overlay_rect)
+            # Draw content
+            if isinstance(cell, tuple):
+                tag, ch = cell
+                if tag == "SKULL":
+                    # Use slightly smaller font size for skull if window is small
+                    if small_window_mode:
+                        skull_font_size = 10
+                        skull_surf = pygame.font.SysFont('monospace', skull_font_size).render(ch, True, (200, 0, 0))
+                    else:
+                        skull_surf = skull_font.render(ch, True, (200, 0, 0))
+                    surf = skull_surf
+                elif tag == "TEXT":
+                    color = (220, 220, 220)
+                    surf = pygame.font.SysFont('monospace', normal_font_size).render(ch, True, color)
+                elif tag == "PROMPT":
+                    color = (255, 255, 255)
+                    surf = pygame.font.SysFont('monospace', normal_font_size).render(ch, True, color)
+                elif tag == "BLIP":
+                    color = (255, 32, 32)
+                    surf = pygame.font.SysFont('monospace', normal_font_size).render(ch, True, color)
+                else:
+                    surf = pygame.font.SysFont('monospace', normal_font_size).render(ch, True, (120, 120, 120))
+                if col == GRID_COLS - 1:
+                    surf_rect = surf.get_rect(right=x + cell_width, centery=y + cell_height / 2)
+                elif row == GRID_ROWS - 1:
+                    surf_rect = surf.get_rect(centerx=x + cell_width / 2, bottom=y + cell_height)
+                else:
+                    surf_rect = surf.get_rect(center=(x + cell_width / 2, y + cell_height / 2))
+                screen.blit(surf, surf_rect)
+
+def render_role_selection_screen(screen, border_manager=None, corruption_anim_frame=0, border_anim_phase=0.0):
+    # Fixed grid size
+    GRID_COLS = 92
+    GRID_ROWS = 28
+    width, height = screen.get_width(), screen.get_height()
+    cell_width = width // GRID_COLS
+    cell_height = height // GRID_ROWS
+    BLACK = (0, 0, 0)
+    screen.fill(BLACK)
+
+    # --- Procedural Border: align to grid edges ---
+    grid = [[" " for _ in range(GRID_COLS)] for _ in range(GRID_ROWS)]
+    # --- UTF-8/ASCII border at grid edges ---
+    for y in range(GRID_ROWS):
+        for x in range(GRID_COLS):
+            # Corners
+            if y == 0 and x == 0:
+                grid[y][x] = "┌"
+            elif y == 0 and x == GRID_COLS - 1:
+                grid[y][x] = "┐"
+            elif y == GRID_ROWS - 1 and x == 0:
+                grid[y][x] = "└"
+            elif y == GRID_ROWS - 1 and x == GRID_COLS - 1:
+                grid[y][x] = "┘"
+            # Top/bottom edges
+            elif y == 0 or y == GRID_ROWS - 1:
+                grid[y][x] = "─"
+            # Left/right edges
+            elif x == 0 or x == GRID_COLS - 1:
+                grid[y][x] = "│"
+
+    # --- Title ---
+    title = "Select Your Role:"
+    title_row = 3
+    title_start_col = max(0, min((GRID_COLS - len(title)) // 2, GRID_COLS - 1))
+    for j, ch in enumerate(title):
+        grid_col = title_start_col + j
+        if grid_col < 0 or grid_col >= GRID_COLS:
+            continue
+        grid[title_row][grid_col] = ("TITLE", ch)
+
+    # --- Roles ---
+    roles = [
+        ("1. The Purifier", "Defender of systems, seeker of truth"),
+        ("2. The Arbiter", "Balancer of chaos, wielder of knowledge"),
+        ("3. The Ascendant", "Agent of entropy, master of corruption")
+    ]
+    role_block_start_row = 6
+    for idx, (role, desc) in enumerate(roles):
+        role_row = role_block_start_row + idx * 4
+        role_start_col = max(0, min((GRID_COLS - len(role)) // 2, GRID_COLS - 1))
+        for j, ch in enumerate(role):
+            grid_col = role_start_col + j
+            if grid_col < 0 or grid_col >= GRID_COLS:
+                continue
+            grid[role_row][grid_col] = ("ROLE", ch)
+        # Wrap description if needed
+        desc_lines = []
+        desc_words = desc.split()
+        desc_line = ""
+        desc_block_cols = GRID_COLS - 12
+        for word in desc_words:
+            test_line = (desc_line + " " if desc_line else "") + word
+            if len(test_line) > desc_block_cols:
+                desc_lines.append(desc_line)
+                desc_line = word
+            else:
+                desc_line = test_line
+        if desc_line:
+            desc_lines.append(desc_line)
+        for d_idx, dline in enumerate(desc_lines):
+            desc_row = role_row + 1 + d_idx
+            desc_start_col = max(0, min((GRID_COLS - len(dline)) // 2, GRID_COLS - 1))
+            for j, ch in enumerate(dline):
+                grid_col = desc_start_col + j
+                if grid_col < 0 or grid_col >= GRID_COLS:
+                    continue
+                grid[desc_row][grid_col] = ("DESC", ch)
+
+    # --- Prompt at the bottom, centered ---
+    prompt = "Press 1, 2, or 3 to select your role."
+    prompt_row = GRID_ROWS - 3
+    prompt_start_col = max(0, min((GRID_COLS - len(prompt)) // 2, GRID_COLS - 1))
+    for j, ch in enumerate(prompt):
+        grid_col = prompt_start_col + j
+        if grid_col < 0 or grid_col >= GRID_COLS:
+            continue
+        grid[prompt_row][grid_col] = ("PROMPT", ch)
+
+    # --- Render the grid ---
+    # Always render single line border, then overlay double line border with breathing effect
+    for row in range(GRID_ROWS):
+        for col in range(GRID_COLS):
+            # For last column/row, align to window edge
+            if col == GRID_COLS - 1:
+                x = width - cell_width
+            else:
+                x = col * cell_width
+            if row == GRID_ROWS - 1:
+                y = height - cell_height
+            else:
+                y = row * cell_height
+            cell = grid[row][col]
+            # Draw single line border at edges
+            border_ch = None
+            if row == 0 and col == 0:
+                border_ch = "┌"
+            elif row == 0 and col == GRID_COLS - 1:
+                border_ch = "┐"
+            elif row == GRID_ROWS - 1 and col == 0:
+                border_ch = "└"
+            elif row == GRID_ROWS - 1 and col == GRID_COLS - 1:
+                border_ch = "┘"
+            elif row == 0 or row == GRID_ROWS - 1:
+                border_ch = "─"
+            elif col == 0 or col == GRID_COLS - 1:
+                border_ch = "│"
+            if border_ch:
+                surf = pygame.font.SysFont('monospace', 12).render(border_ch, True, (120, 120, 120))
+                # For last col/row, right/bottom align the character
+                if col == GRID_COLS - 1:
+                    surf_rect = surf.get_rect(right=x + cell_width, centery=y + cell_height / 2)
+                elif row == GRID_ROWS - 1:
+                    surf_rect = surf.get_rect(centerx=x + cell_width / 2, bottom=y + cell_height)
+                else:
+                    surf_rect = surf.get_rect(center=(x + cell_width / 2, y + cell_height / 2))
+                screen.blit(surf, surf_rect)
+            # Overlay double line border with breathing effect (faster, decoupled)
+            double_border_ch = None
+            if row == 0 and col == 0:
+                double_border_ch = "╔"
+            elif row == 0 and col == GRID_COLS - 1:
+                double_border_ch = "╗"
+            elif row == GRID_ROWS - 1 and col == 0:
+                double_border_ch = "╚"
+            elif row == GRID_ROWS - 1 and col == GRID_COLS - 1:
+                double_border_ch = "╝"
+            elif row == 0 or row == GRID_ROWS - 1:
+                double_border_ch = "═"
+            elif col == 0 or col == GRID_COLS - 1:
+                double_border_ch = "║"
+            if double_border_ch:
+                # Use border_anim_phase for border breathing
+                pulse = 0.5 + 0.5 * math.sin(border_anim_phase * 2.5)
+                overlay_alpha = int(180 * pulse)
+                overlay_color = (200, 80, 80)
+                overlay_font = pygame.font.SysFont('monospace', 12)
+                overlay_surf = overlay_font.render(double_border_ch, True, overlay_color)
+                overlay_surf.set_alpha(overlay_alpha)
+                if col == GRID_COLS - 1:
+                    overlay_rect = overlay_surf.get_rect(right=x + cell_width, centery=y + cell_height / 2)
+                elif row == GRID_ROWS - 1:
+                    overlay_rect = overlay_surf.get_rect(centerx=x + cell_width / 2, bottom=y + cell_height)
+                else:
+                    overlay_rect = overlay_surf.get_rect(center=(x + cell_width / 2, y + cell_height / 2))
+                screen.blit(overlay_surf, overlay_rect)
+            # Draw content
+            if isinstance(cell, tuple):
+                tag, ch = cell
+                if tag == "TITLE":
+                    surf = pygame.font.SysFont('monospace', 12).render(ch, True, (200, 200, 200))
+                elif tag == "ROLE":
+                    surf = pygame.font.SysFont('monospace', 12).render(ch, True, (220, 220, 220))
+                elif tag == "DESC":
+                    surf = pygame.font.SysFont('monospace', 12).render(ch, True, (150, 150, 150))
+                elif tag == "PROMPT":
+                    surf = pygame.font.SysFont('monospace', 12).render(ch, True, (255, 255, 255))
+                else:
+                    surf = pygame.font.SysFont('monospace', 12).render(ch, True, (120, 120, 120))
+                if col == GRID_COLS - 1:
+                    surf_rect = surf.get_rect(right=x + cell_width, centery=y + cell_height / 2)
+                elif row == GRID_ROWS - 1:
+                    surf_rect = surf.get_rect(centerx=x + cell_width / 2, bottom=y + cell_height)
+                else:
+                    surf_rect = surf.get_rect(center=(x + cell_width / 2, y + cell_height / 2))
+                screen.blit(surf, surf_rect)
+# --- Main Game Class ---
+class Game:
+    """Main game class that coordinates all game components"""
+    def __init__(
+        self,
+        command_handler: MainTerminalHandler,
+        effect_manager: EffectManager,
+        file_system: FileSystemHandler,
+        llm_handler: LLMHandler,
+        audio_manager: AudioManager,
+        persistence_manager: PersistenceManager,
+        puzzle_manager: PuzzleManager,
+        story_manager: StoryManager,
+        terminal_renderer: TerminalRenderer,
+        game_state=None
+    ):
+        self.command_handler = command_handler
+        self.effect_manager = effect_manager
+        self.file_system = file_system
+        self.llm_handler = llm_handler
+        self.audio_manager = audio_manager
+        self.persistence_manager = persistence_manager
+        self.puzzle_manager = puzzle_manager
+        self.story_manager = story_manager
+        self.terminal_renderer = terminal_renderer
+        self.game_state = game_state
+
+        self.running = False
+        self.current_state = "disclaimer"
+        self.corruption_level = 0.0
+        self.current_zone = "mainframe"
+        self.current_layer = 0
+
+        self.disclaimer_acknowledged = False
+        self.skull_anim_timer = 0.0
+        self.skull_anim_state = False  # False = closed, True = open
+        self.corruption_anim_timer = 0.0
+        self.corruption_anim_frame = 0
+        self.border_anim_timer = 0.0
+        self.border_anim_phase = 0.0
+
+        pygame.init()
+        pygame.mixer.init()
+        # Set sensible default and minimum window size
+        min_width, min_height = 800, 400
+        default_width, default_height = 1280, 720
+        self.screen = pygame.display.set_mode((default_width, default_height), pygame.RESIZABLE)
+        pygame.display.set_caption(WINDOW_TITLE)
+        self.clock = pygame.time.Clock()
+
+        # Set the terminal renderer's dimensions to match the window
+        self.terminal_renderer.width = WINDOW_WIDTH
+        self.terminal_renderer.height = WINDOW_HEIGHT
+
+        logging.info("Game initialized successfully")
+
+    def run(self):
+        """Main game loop"""
+        self.running = True
+        logging.info("Starting main game loop")
+        try:
+            while self.running:
+                self._handle_events()
+                self._update()
+                self._render()
+                self.clock.tick(FPS)
+        except Exception as e:
+            logging.error(f"Error in main game loop: {e}", exc_info=True)
+            self.running = False
+        finally:
+            self._cleanup()
+
+    def _handle_events(self):
+        """Handle all game events"""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+            elif event.type == pygame.KEYDOWN:
+                if self.current_state == "disclaimer" and not self.disclaimer_acknowledged:
+                    self.disclaimer_acknowledged = True
+                    self.current_state = "role_selection"
+                else:
+                    self._handle_keydown(event)
+            elif event.type == pygame.VIDEORESIZE:
+                # Update the terminal renderer's dimensions when the window is resized
+                self.terminal_renderer.width = event.w
+                self.terminal_renderer.height = event.h
+
+    def _handle_keydown(self, event):
+        """Handle keyboard input"""
+        if event.key == pygame.K_ESCAPE:
+            self.running = False
+        elif self.current_state == "role_selection":
+            self._handle_role_selection_input(event)
+        else:
+            self.command_handler.handle_input(event)
+    
+    def _handle_role_selection_input(self, event):
+        """Handle input during role selection"""
+        if event.key == pygame.K_1:
+            self._select_role("PURIFIER")
+        elif event.key == pygame.K_2:
+            self._select_role("ARBITER")
+        elif event.key == pygame.K_3:
+            self._select_role("ASCENDANT")
+        # Also handle number row keys
+        elif event.unicode == "1":
+            self._select_role("PURIFIER")
+        elif event.unicode == "2":
+            self._select_role("ARBITER")
+        elif event.unicode == "3":
+            self._select_role("ASCENDANT")
+    
+    def _select_role(self, role):
+        """Select a player role and transition to main terminal"""
+        logging.info(f"Player selected role: {role}")
         
-        y_offset = skull_y_start + len(current_skull_art_lines) * disclaimer_mono_font_medium.get_linesize() + 5 # Further reduced from 10
+        # Set role in game state manager if available
+        if hasattr(self.game_state, 'set_player_role'):
+            success = self.game_state.set_player_role(role)
+            if success:
+                logging.info(f"Role set successfully in GameStateManager: {role}")
+                # Transition to main terminal using GameStateManager
+                if hasattr(self.game_state, 'change_state'):
+                    from src.core.state import STATE_MAIN_TERMINAL
+                    self.game_state.change_state(STATE_MAIN_TERMINAL)
+                self.current_state = "main_terminal"
+                
+                # Add welcome message to terminal
+                role_names = {
+                    "PURIFIER": "The Purifier - Defender of Systems",
+                    "ARBITER": "The Arbiter - Balancer of Chaos", 
+                    "ASCENDANT": "The Ascendant - Agent of Entropy"
+                }
+                self.terminal_renderer.add_to_buffer(f"Role selected: {role_names.get(role, role)}")
+                self.terminal_renderer.add_to_buffer("Welcome to the Aether Network.")
+                self.terminal_renderer.add_to_buffer("Type 'help' to see available commands.")
+            else:
+                logging.error(f"Failed to set role: {role}")
+        else:
+            # Fallback for basic game state
+            logging.warning("GameStateManager not available, using basic role selection")
+            self.current_state = "main_terminal"
+            self.terminal_renderer.add_to_buffer(f"Role selected: {role}")
+            self.terminal_renderer.add_to_buffer("Welcome to the Aether Network.")
+            self.terminal_renderer.add_to_buffer("Type 'help' to see available commands.")
 
+    def _update(self):
+        """Update game state"""
+        # Animate skull on disclaimer screen
+        if self.current_state == "disclaimer" and not self.disclaimer_acknowledged:
+            self.skull_anim_timer += 1.0 / FPS
+            # Toggle skull every 0.09 seconds (very fast)
+            if self.skull_anim_timer >= 0.09:
+                self.skull_anim_state = not self.skull_anim_state
+                self.skull_anim_timer = 0.0
 
-        # --- Render Distorted Title ---
-        title_text = "WARNING: Mature Audiences Only"
-        original_title_color = (255, 100, 100)
-        title_base_y = y_offset
-        
-        # Calculate total width of title for centering
-        total_title_width = disclaimer_mono_font_large.size(title_text)[0]
-        current_char_x = WINDOW_WIDTH // 2 - total_title_width // 2
-
-        for char_idx, char_visual in enumerate(title_text):
-            dx = random.randint(-1, 1)
-            dy = random.randint(-1, 1)
-            # Slightly vary color, keeping red prominent
-            char_color_r = original_title_color[0]
-            char_color_g = max(0, min(255, original_title_color[1] + random.randint(-20, 20)))
-            char_color_b = max(0, min(255, original_title_color[2] + random.randint(-20, 20)))
-            distorted_char_color = (char_color_r, char_color_g, char_color_b)
+        # Update corruption animation frame for all states
+        self.corruption_anim_timer += 1.0 / FPS
+        if self.corruption_anim_timer >= 0.1:  # Update every 0.1 seconds
+            self.corruption_anim_frame = (self.corruption_anim_frame + 1) % 10
+            self.corruption_anim_timer = 0.0
             
-            char_pos = (current_char_x + dx, title_base_y + dy)
-            render_text(screen, char_visual, char_pos, fg_color=distorted_char_color, font=disclaimer_mono_font_large)
-            current_char_x += disclaimer_mono_font_large.size(char_visual)[0]
-        
-        y_offset += disclaimer_mono_font_large.get_linesize() + 5 # Further reduced from 10
+        # Update border animation phase for breathing effect
+        self.border_anim_timer += 1.0 / FPS
+        self.border_anim_phase = self.border_anim_timer
 
+        # The effect manager expects a delta time (dt), so we use a fixed timestep for now
+        self.effect_manager.update(1.0 / FPS)
+        # If audio_manager or story_manager have update methods, call them here as needed
+        # (No update method in StoryManager or PuzzleManager per actual code)
 
-        # --- Render Disclaimer Messages with Character Corruption ---
-        messages = [
-            "This game is a work of fiction and intended for mature audiences.",
-            "It explores themes of horror and hacking.",
-            " ",
-            "The activities depicted, if performed in real life, can have serious",
-            "legal, ethical, and personal consequences.",
-            " ",
-            "This simulation does not endorse or encourage any illegal or unethical behavior.",
-            "Always act responsibly and ethically online and offline.",
-            " ",
-            "Player discretion is strongly advised."
-        ]
-        original_message_color = (200, 200, 200)
-        for msg_line in messages:
-            msg_total_width = disclaimer_mono_font_small.size(msg_line)[0]
-            current_msg_char_x = WINDOW_WIDTH // 2 - msg_total_width // 2
-            
-            for char_visual in msg_line:
-                display_char = char_visual
-                char_fg_color = original_message_color
-                if char_visual != ' ' and random.random() < CHARACTER_CORRUPTION_CHANCE: # Only corrupt non-space chars
-                    display_char = random.choice(GLITCH_CHARS)
-                    # Optional: slightly alter color for glitched char
-                    # char_fg_color = (random.randint(150,250), random.randint(50,150), random.randint(50,150))
+    def _render(self):
+        """Render the current game state"""
+        # Render to the main pygame display surface
+        if self.current_state == "disclaimer" and not self.disclaimer_acknowledged:
+            # Use default pygame font for now
+            disclaimer_mono_font_medium = pygame.font.SysFont('monospace', DISCLAIMER_FONT_SIZE_MEDIUM)
+            disclaimer_mono_font_small = pygame.font.SysFont('monospace', DISCLAIMER_FONT_SIZE_SMALL)
+            # Pass border manager for procedural border rendering
+            render_disclaimer_screen(
+                self.screen,
+                self.corruption_level,
+                disclaimer_mono_font_medium,
+                disclaimer_mono_font_small,
+                skull_open=self.skull_anim_state,
+                border_manager=self.terminal_renderer.border_manager,
+                corruption_anim_frame=self.corruption_anim_frame,
+                border_anim_phase=self.border_anim_phase
+            )
+        elif self.current_state == "role_selection":
+            render_role_selection_screen(
+                self.screen,
+                border_manager=self.terminal_renderer.border_manager,
+                corruption_anim_frame=self.corruption_anim_frame,
+                border_anim_phase=self.border_anim_phase
+            )
+        else:
+            self.terminal_renderer.render(self.screen, self.effect_manager)
+        pygame.display.flip()
 
-                char_pos = (current_msg_char_x, y_offset)
-                render_text(screen, display_char, char_pos, fg_color=char_fg_color, font=disclaimer_mono_font_small)
-                current_msg_char_x += disclaimer_mono_font_small.size(display_char)[0]
-            y_offset += disclaimer_mono_font_small.get_linesize()
-        
-        y_offset += 10 # Further reduced from 15, extra space before continue prompt
-        
-        # --- Render Jittery "Press SPACE" Text ---
-        continue_text = "Press SPACE to acknowledge and continue."
-        original_continue_color = (255, 255, 0)
-        continue_base_y = y_offset
-        
-        # Use disclaimer_mono_font_large for "Press SPACE" text
-        total_continue_width = disclaimer_mono_font_large.size(continue_text)[0]
-        current_continue_char_x = WINDOW_WIDTH // 2 - total_continue_width // 2
+    def _cleanup(self):
+        """Clean up resources before exit"""
+        logging.info("Cleaning up game resources...")
+        # Save game state if possible
+        if hasattr(self.persistence_manager, "save_game") and hasattr(self, "game_state"):
+            self.persistence_manager.save_game(self.game_state)
+        self.audio_manager.stop_all_sounds()
+        pygame.quit()
+        logging.info("Game cleanup complete")
 
-        for char_visual in continue_text:
-            dx = random.randint(-1, 1)
-            dy = random.randint(-1, 1)
-            
-            char_color_r = max(0, min(255, original_continue_color[0] + random.randint(-20, 20)))
-            char_color_g = max(0, min(255, original_continue_color[1] + random.randint(-20, 20)))
-            char_color_b = original_continue_color[2] # Keep blue component stable for yellow
-            distorted_char_color = (char_color_r, char_color_g, char_color_b)
-            
-            char_pos = (current_continue_char_x + dx, continue_base_y + dy)
-            # Use disclaimer_mono_font_large here
-            render_text(screen, char_visual, char_pos, fg_color=distorted_char_color, font=disclaimer_mono_font_large)
-            current_continue_char_x += disclaimer_mono_font_large.size(char_visual)[0]
+    def change_state(self, new_state: str):
+        logging.info(f"Changing game state from {self.current_state} to {new_state}")
+        self.current_state = new_state
+        if new_state == "main_menu":
+            self._init_main_menu()
+        elif new_state == "game":
+            self._init_game()
+        elif new_state == "puzzle":
+            self._init_puzzle()
+
+    def _init_main_menu(self):
+        # Play menu music if available
+        if hasattr(self.audio_manager, "music_tracks") and "menu" in self.audio_manager.music_tracks:
+            self.audio_manager.play_music_track(self.audio_manager.music_tracks["menu"])
+        # Theme management is handled by a theme manager if present
+
+    def _init_game(self):
+        # Play ambient music if available
+        if hasattr(self.audio_manager, "music_tracks") and "ambient" in self.audio_manager.music_tracks:
+            self.audio_manager.play_music_track(self.audio_manager.music_tracks["ambient"])
+        # Theme management is handled by a theme manager if present
+
+    def _init_puzzle(self):
+        # Play puzzle music if available
+        if hasattr(self.audio_manager, "music_tracks") and "puzzle" in self.audio_manager.music_tracks:
+            self.audio_manager.play_music_track(self.audio_manager.music_tracks["puzzle"])
+        # Theme management is handled by a theme manager if present
+
+    def set_corruption_level(self, level: float):
+        self.corruption_level = max(0.0, min(1.0, level))
+        logging.info(f"Corruption level set to {self.corruption_level}")
+
+    def change_zone(self, new_zone: str, new_layer: int = 0):
+        logging.info(f"Changing zone from {self.current_zone} to {new_zone} (layer {new_layer})")
+        self.current_zone = new_zone
+        self.current_layer = new_layer
+        # No set_zone method in AudioManager; removed
+        # No set_zone method in EffectManager; remove this call
+
+# --- Entry Point ---
+def main():
+    setup_logging()
+    logger = logging.getLogger(__name__)
+
+    try:
+        logger.info("Initializing game components...")
+
+        # Create data directories if they don't exist
+        for dir_name in ["saves", "data/logs", "data/personal"]:
+            (project_root / dir_name).mkdir(parents=True, exist_ok=True)
+
+        # Initialize managers
+        audio_manager = AudioManager()
+        file_system = FileSystemHandler()
+        llm_handler = LLMHandler()
+        persistence_manager = PersistenceManager()
+        puzzle_manager = PuzzleManager()
         
-        # Use disclaimer_mono_font_large for y_offset increment
-        y_offset += disclaimer_mono_font_large.get_linesize() + 10 # Reduced spacing, using large font metric
- 
-        # --- Second Skull Rendering Removed (comment kept for history) ---
- 
-    elif game_state_manager.is_state(STATE_ROLE_SELECTION):
-        terminal.render(screen, effect_manager) # Uses terminal to display role choices
-    elif game_state_manager.is_state(STATE_MAIN_TERMINAL):
-        terminal.render(screen, effect_manager) # Pass effect_manager for overlay rendering
-    elif game_state_manager.is_state(STATE_MSFCONSOLE):
-        # MSFConsole uses the main terminal instance for display.
-        # The prompt is set when switching to this state.
-        terminal.render(screen, effect_manager)
-    elif game_state_manager.is_state(STATE_MINIGAME):
-        # Placeholder for minigame rendering
-        render_text(screen, "MINIGAME ACTIVE", (10,10), fg_color=(0,255,255), font=pygame.font.Font(None, 28))
-    elif game_state_manager.is_state(STATE_PUZZLE_ACTIVE):
-        # Puzzle content is displayed via the terminal buffer
-        terminal.render(screen, effect_manager)
+        # Game state manager is required for EffectManager and StoryManager
+        try:
+            from src.core.state import GameStateManager
+            game_state = GameStateManager()
+        except ImportError:
+            # Create a simple game state object with required attributes
+            logger.warning("GameStateManager not found. Using SimpleNamespace as fallback.")
+            from types import SimpleNamespace
+            # Import the expected GameStateManager type for type compatibility
+            try:
+                from src.core.state import GameStateManager as GSMType
+                class CompatibleGameState(SimpleNamespace, GSMType):
+                    pass
+                game_state = CompatibleGameState(role="purifier", corruption_level=0.0)
+            except (ImportError, TypeError):
+                # If we can't import the type or there's a type error, create a basic object
+                logger.warning("Failed to create type-compatible game state. Basic functionality only.")
+                game_state = SimpleNamespace(role="purifier", corruption_level=0.0)
+
+            setattr(game_state, "is_takeover_active", lambda: False)
+
+        # Initialize enhanced terminal renderer
+        terminal_renderer = create_terminal_renderer(
+            enhanced=True,
+            effect_manager=None,  # Will be set after effect_manager is created
+            game_state_manager=game_state
+        )
         
-    # Optional debug display for current game state:
-    # state_debug_text = f"State: {game_state_manager.get_state()} Role: {game_state_manager.get_player_role()}"
-    # debug_font = pygame.font.Font(None, 18)
-    # render_text(screen, state_debug_text, (10, WINDOW_HEIGHT - 20), fg_color=(128,128,128), font=debug_font)
- 
-    pygame.display.flip() # Update the full display
- 
-# --- Quit Pygame ---
-pygame.quit()
+        # Initialize effect manager with terminal renderer
+        effect_manager = EffectManager(game_state, audio_manager, terminal_renderer)
+        
+        # Update the terminal renderer with the effect manager
+        terminal_renderer.effect_manager = effect_manager
+        
+        # Configure enhanced effects if using enhanced renderer
+        if hasattr(terminal_renderer, '_effect_config'):
+            from src.ui.terminal_integration import configure_enhanced_effects
+            configure_enhanced_effects(
+                terminal_renderer,
+                corruption_sensitivity=0.8,
+                effect_intensity=1.0,
+                subliminal_frequency=0.1
+            )
+        
+        story_manager = StoryManager(game_state, effect_manager)
+
+        # Set up puzzle manager with terminal
+        puzzle_manager.set_terminal(terminal_renderer)
+
+        # Boot messages
+        terminal_renderer.add_to_buffer("Cyberscape: Digital Dread - Booting...")
+        terminal_renderer.add_to_buffer("Enhanced Terminal Renderer Activated.")
+        terminal_renderer.add_to_buffer("System Initialized.")
+        terminal_renderer.add_to_buffer("Waiting for user acknowledgement of disclaimer...")
+
+        # Initialize command handler
+        command_handler = MainTerminalHandler(
+            effect_manager=effect_manager,
+            file_system=file_system,
+            puzzle_manager=puzzle_manager,
+            story_manager=story_manager,
+            terminal_renderer=terminal_renderer,
+            llm_handler=llm_handler
+        )
+
+        # Enhanced diagnostics
+        logger.info("Running diagnostics...")
+        logger.info(f"GameState type: {type(game_state).__name__}")
+        logger.info(f"EffectManager initialized: {effect_manager is not None}")
+        logger.info(f"StoryManager initialized: {story_manager is not None}")
+        logger.info(f"Audio Manager initialized: {audio_manager is not None}")
+        logger.info(f"File System Handler initialized: {file_system is not None}")
+        logger.info(f"LLM Handler initialized: {llm_handler is not None}")
+        logger.info(f"Terminal Renderer initialized: {terminal_renderer is not None}")
+        logger.info(f"Terminal Renderer type: {type(terminal_renderer).__name__}")
+        
+        # Check enhanced terminal capabilities
+        from src.ui.terminal_integration import get_renderer_capabilities, is_enhanced_renderer
+        capabilities = get_renderer_capabilities(terminal_renderer)
+        logger.info(f"Terminal Renderer is enhanced: {is_enhanced_renderer(terminal_renderer)}")
+        enhanced_features = [name for name, available in capabilities.items() if available and 'enhanced' in name or 'effects' in name]
+        logger.info(f"Available features: {', '.join(enhanced_features)}")
+        
+        logger.info(f"Command Handler initialized: {command_handler is not None}")
+        logger.info(f"Persistence Manager initialized: {persistence_manager is not None}")
+        logger.info(f"Puzzle Manager initialized: {puzzle_manager is not None}")
+        logger.info("Diagnostics complete.")
+
+        # Initialize and start the game
+        game = Game(
+            command_handler=command_handler,
+            effect_manager=effect_manager,
+            file_system=file_system,
+            llm_handler=llm_handler,
+            audio_manager=audio_manager,
+            persistence_manager=persistence_manager,
+            puzzle_manager=puzzle_manager,
+            story_manager=story_manager,
+            terminal_renderer=terminal_renderer,
+            game_state=game_state
+        )
+
+        logger.info("Starting game...")
+        game.run()
+
+    except Exception as e:
+        logger.error(f"Fatal error: {e}", exc_info=True)
+        sys.exit(1)
+    finally:
+        logger.info("Game shutdown complete")
+
+if __name__ == "__main__":
+    main()

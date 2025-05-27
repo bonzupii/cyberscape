@@ -1,0 +1,27 @@
+{
+    "puzzle_id": "sequence_001",
+    "type": "sequence",
+    "name": "Digital Sequence",
+    "description": "The Aetherial Scourge has corrupted this sequence. Find the pattern and complete it.",
+    "difficulty": 1,
+    "corruption_effects": {
+        "visual_corruption": true,
+        "audio_corruption": true,
+        "text_corruption": true,
+        "corruption_level": 0.3
+    },
+    "hints": [
+        "Look for patterns in the binary representation",
+        "Each number is related to its position in the sequence",
+        "The pattern involves both addition and multiplication"
+    ],
+    "solution": {
+        "sequence_prompt": [2, 4, 8, 16, "?"],
+        "solution": [32]
+    },
+    "rewards": {
+        "corruption_reduction": 0.1,
+        "unlock_files": ["/var/log/sequence_001.log"],
+        "story_events": ["sequence_001_solved"]
+    }
+} 

@@ -1,0 +1,29 @@
+{
+    "puzzle_id": "file_manipulation_001",
+    "type": "file_manipulation",
+    "name": "System Configuration Repair",
+    "description": "The Aetherial Scourge has corrupted a critical system configuration file. Repair it by removing the corrupted sections and restoring essential parameters.",
+    "difficulty": 3,
+    "corruption_effects": {
+        "visual_corruption": true,
+        "audio_corruption": true,
+        "text_corruption": true,
+        "corruption_level": 0.6
+    },
+    "hints": [
+        "The configuration file is in the /etc/system/ directory",
+        "Look for fragments marked with '█CORRUPTED█'",
+        "The firewall settings must be restored to their original values",
+        "Pay attention to the integrity_check parameter at the end of the file"
+    ],
+    "solution": {
+        "target_file": "/etc/system/firewall.conf",
+        "required_content": "firewall_status=active\nblock_malicious=true\nallow_local=true\nprioritize_security=true\nintegrity_check=98725\n",
+        "success_message": "System configuration successfully restored. Firewall reactivated."
+    },
+    "rewards": {
+        "corruption_reduction": 0.2,
+        "unlock_files": ["/system/secure/incident_report_27.txt"],
+        "story_events": ["firewall_restored", "security_protocols_reactivated"]
+    }
+}

@@ -1,0 +1,87 @@
+{
+    "typing": {
+        "normal": {
+            "file": "sounds/typing_normal.wav",
+            "volume": 0.5,
+            "pitch_variation": 0.1
+        },
+        "corrupted": {
+            "file": "sounds/typing_corrupted.wav",
+            "volume": 0.6,
+            "pitch_variation": 0.2
+        },
+        "system": {
+            "file": "sounds/typing_system.wav",
+            "volume": 0.4,
+            "pitch_variation": 0.05
+        }
+    },
+    "corruption": {
+        "purifier": {
+            "file": "sounds/corruption_white.wav",
+            "volume": 0.7,
+            "pitch_variation": 0.15
+        },
+        "arbiter": {
+            "file": "sounds/corruption_grey.wav",
+            "volume": 0.8,
+            "pitch_variation": 0.2
+        },
+        "ascendant": {
+            "file": "sounds/corruption_black.wav",
+            "volume": 0.9,
+            "pitch_variation": 0.25
+        }
+    },
+    "flicker": {
+        "purifier": {
+            "file": "sounds/flicker_white.wav",
+            "volume": 0.4,
+            "pitch_variation": 0.1
+        },
+        "arbiter": {
+            "file": "sounds/flicker_grey.wav",
+            "volume": 0.5,
+            "pitch_variation": 0.15
+        },
+        "ascendant": {
+            "file": "sounds/flicker_black.wav",
+            "volume": 0.6,
+            "pitch_variation": 0.2
+        }
+    },
+    "ambient": {
+        "purifier": {
+            "file": "sounds/ambient_white.wav",
+            "volume": 0.3,
+            "loop": true
+        },
+        "arbiter": {
+            "file": "sounds/ambient_grey.wav",
+            "volume": 0.4,
+            "loop": true
+        },
+        "ascendant": {
+            "file": "sounds/ambient_black.wav",
+            "volume": 0.5,
+            "loop": true
+        }
+    },
+    "system": {
+        "error": {
+            "file": "data/audio/system/error.wav",
+            "volume": 0.7,
+            "pitch_variation": 0.1
+        },
+        "success": {
+            "file": "data/audio/system/success.wav",
+            "volume": 0.6,
+            "pitch_variation": 0.05
+        },
+        "warning": {
+            "file": "data/audio/system/warning.wav",
+            "volume": 0.65,
+            "pitch_variation": 0.08
+        }
+    }
+} 

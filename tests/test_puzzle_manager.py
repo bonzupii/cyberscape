@@ -1,370 +1,555 @@
-import pytest
-from puzzle_manager import Puzzle, AlgorithmPuzzle, SequenceCompletionPuzzle, CaesarCipherPuzzle, PuzzleManager
+import unittest
+from unittest.mock import Mock, patch, mock_open
+import os
+import json
+from datetime import datetime
 
-# --- Test Fixtures ---
+from src.puzzle.manager import (
+    PuzzleState,
+    Puzzle,
+    AlgorithmPuzzle,
+    SequenceCompletionPuzzle,
+    CryptographicPuzzle,
+    CaesarCipherPuzzle,
+    FileManipulationPuzzle,
+    CodeAnalysisPuzzle,
+    ConfigFilePuzzle,
+    NetworkPuzzle,
+    BinaryAnalysisPuzzle,
+    LogicGatePuzzle,
+    MemoryReconstructionPuzzle,
+    SystemLoadBalancerPuzzle,
+    PuzzleManager
+)
 
-@pytest.fixture
-def sequence_puzzle_numbers():
-    return SequenceCompletionPuzzle(
-        puzzle_id="SEQ_NUM",
-        name="Numerical Sequence",
-        description="Complete the number sequence.",
-        sequence_prompt=[1, 2, 3, "?"],
-        solution=[4],
-        difficulty=1
-    )
+# Mock LLMHandler to avoid external dependencies in tests
+class MockLLMHandler:
+    def get_response(self, prompt):
+        return f"Mocked LLM response to: {prompt}"
 
-@pytest.fixture
-def sequence_puzzle_strings():
-    return SequenceCompletionPuzzle(
-        puzzle_id="SEQ_STR",
-        name="Alphabetical Sequence",
-        description="Complete the letter sequence.",
-        sequence_prompt=["A", "B", "C", "?"],
-        solution=["D"],
-        difficulty=1
-    )
+class TestPuzzleState(unittest.TestCase):
+    def test_puzzle_state_creation_defaults(self):
+        state = PuzzleState(puzzle_id="test_puzzle")
+        self.assertEqual(state.puzzle_id, "test_puzzle")
+        self.assertFalse(state.is_active)
+        self.assertFalse(state.is_completed)
+        self.assertEqual(state.progress, 0.0)
+        self.assertEqual(state.hints_used, [])
+        self.assertIsNotNone(state.start_time)
+        self.assertIsNone(state.completion_time)
+        self.assertEqual(state.attempts, 0)
+        self.assertFalse(state.is_corrupted)
+        self.assertEqual(state.corruption_level, 0.0)
 
-@pytest.fixture
-def sequence_puzzle_multi_solution():
-    return SequenceCompletionPuzzle(
-        puzzle_id="SEQ_MULTI",
-        name="Multi-part Sequence",
-        description="Complete the multi-part sequence.",
-        sequence_prompt=[10, 20, "?", 40, "?"],
-        solution=[30, 50],
-        difficulty=2
-    )
+    def test_puzzle_state_to_dict_and_from_dict(self):
+        start_time = datetime.now()
+        completion_time = datetime.now()
+        state = PuzzleState(
+            puzzle_id="test_puzzle_01",
+            is_active=True,
+            is_completed=True,
+            progress=0.5,
+            hints_used=["hint1"],
+            start_time=start_time,
+            completion_time=completion_time,
+            attempts=3,
+            is_corrupted=True,
+            corruption_level=0.75
+        )
+        state_dict = state.to_dict()
+        self.assertEqual(state_dict["puzzle_id"], "test_puzzle_01")
+        self.assertTrue(state_dict["is_active"])
+        self.assertTrue(state_dict["is_completed"])
+        # ... (add more assertions for other fields)
 
-# --- Tests for SequenceCompletionPuzzle ---
+        new_state = PuzzleState.from_dict(state_dict)
+        self.assertEqual(new_state.puzzle_id, state.puzzle_id)
+        self.assertEqual(new_state.is_active, state.is_active)
+        self.assertEqual(new_state.is_completed, state.is_completed)
+        # ... (add more assertions for other fields)
 
-def test_sequence_puzzle_creation(sequence_puzzle_numbers):
-    assert sequence_puzzle_numbers.puzzle_id == "SEQ_NUM"
-    assert sequence_puzzle_numbers.name == "Numerical Sequence"
-    assert sequence_puzzle_numbers.category == "Algorithm"
-    assert not sequence_puzzle_numbers.solved
-    assert sequence_puzzle_numbers.attempts == 0
+class TestPuzzleBaseClass(unittest.TestCase):
+    def setUp(self):
+        self.mock_manager = Mock()
+        self.puzzle = Puzzle("base_001", "Base Puzzle", "A test puzzle.", self.mock_manager, 2)
 
-def test_sequence_puzzle_get_display_text(sequence_puzzle_numbers):
-    expected_text = "Numerical Sequence\n\nComplete the number sequence.\n\nSequence: 1 2 3 ?"
-    assert sequence_puzzle_numbers.get_display_text() == expected_text
+    def test_puzzle_initialization(self):
+        self.assertEqual(self.puzzle.puzzle_id, "base_001")
+        self.assertEqual(self.puzzle.name, "Base Puzzle")
+        self.assertEqual(self.puzzle.description, "A test puzzle.")
+        self.assertEqual(self.puzzle.manager, self.mock_manager)
+        self.assertEqual(self.puzzle.difficulty, 2)
+        self.assertFalse(self.puzzle.solved)
+        self.assertEqual(self.puzzle.attempts, 0)
+        self.assertFalse(self.puzzle.is_corrupted)
+        self.assertEqual(self.puzzle.corruption_level, 0.0)
+        self.assertEqual(self.puzzle.hints, [])
+        self.assertEqual(self.puzzle.rewards, [])
 
-def test_sequence_puzzle_attempt_solution_correct_number(sequence_puzzle_numbers):
-    solved, feedback = sequence_puzzle_numbers.attempt_solution("4")
-    assert solved
-    assert sequence_puzzle_numbers.solved
-    assert "solved" in feedback.lower()
-    assert sequence_puzzle_numbers.attempts == 1
+    def test_get_display_text(self):
+        expected_text = "Base Puzzle\n\nA test puzzle."
+        self.assertEqual(self.puzzle.get_display_text(), expected_text)
 
-def test_sequence_puzzle_attempt_solution_correct_string(sequence_puzzle_strings):
-    solved, feedback = sequence_puzzle_strings.attempt_solution("D")
-    assert solved
-    assert sequence_puzzle_strings.solved
-    assert "solved" in feedback.lower()
+    def test_attempt_solution_default(self):
+        mock_terminal = Mock()
+        solved, msg = self.puzzle.attempt_solution("any_input", mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Solution attempt logic not implemented for this puzzle type.")
+        self.assertEqual(self.puzzle.attempts, 1)
 
-def test_sequence_puzzle_attempt_solution_incorrect_number(sequence_puzzle_numbers):
-    solved, feedback = sequence_puzzle_numbers.attempt_solution("5")
-    assert not solved
-    assert not sequence_puzzle_numbers.solved
-    assert "incorrect" in feedback.lower()
-    assert sequence_puzzle_numbers.attempts == 1
+    def test_on_solve(self):
+        mock_terminal = Mock()
+        mock_terminal.effect_manager = Mock()
+        msg = self.puzzle.on_solve(mock_terminal)
+        self.assertTrue(self.puzzle.solved)
+        self.assertEqual(msg, "Puzzle 'Base Puzzle' solved!")
+        mock_terminal.effect_manager.start_character_corruption_effect.assert_called_once()
+        mock_terminal.effect_manager.start_audio_glitch_effect.assert_called_once()
 
-def test_sequence_puzzle_attempt_solution_incorrect_string(sequence_puzzle_strings):
-    solved, feedback = sequence_puzzle_strings.attempt_solution("E")
-    assert not solved
-    assert not sequence_puzzle_strings.solved
-    assert "incorrect" in feedback.lower()
-
-def test_sequence_puzzle_attempt_solution_invalid_format_number(sequence_puzzle_numbers):
-    solved, feedback = sequence_puzzle_numbers.attempt_solution("abc")
-    assert not solved
-    assert "invalid input format" in feedback.lower()
-
-def test_sequence_puzzle_attempt_solution_correct_multi_number(sequence_puzzle_multi_solution):
-    solved, feedback = sequence_puzzle_multi_solution.attempt_solution("30,50")
-    assert solved
-    assert sequence_puzzle_multi_solution.solved
-    assert "solved" in feedback.lower()
-
-def test_sequence_puzzle_attempt_solution_correct_multi_number_with_spaces(sequence_puzzle_multi_solution):
-    solved, feedback = sequence_puzzle_multi_solution.attempt_solution("30, 50")
-    assert solved
-    assert sequence_puzzle_multi_solution.solved
-
-def test_sequence_puzzle_attempt_solution_incorrect_multi_number_order(sequence_puzzle_multi_solution):
-    solved, feedback = sequence_puzzle_multi_solution.attempt_solution("50,30")
-    assert not solved
-    assert "incorrect" in feedback.lower()
-
-def test_sequence_puzzle_attempt_solution_incorrect_multi_number_partial(sequence_puzzle_multi_solution):
-    solved, feedback = sequence_puzzle_multi_solution.attempt_solution("30")
-    assert not solved # Expects both parts
-    assert "incorrect" in feedback.lower()
-
-
-def test_sequence_puzzle_on_solve(sequence_puzzle_numbers):
-    sequence_puzzle_numbers.solved = True # Manually set for testing on_solve directly if needed
-    feedback = sequence_puzzle_numbers.on_solve()
-    assert "Puzzle 'Numerical Sequence' solved!" == feedback
-
-def test_sequence_puzzle_get_hint(sequence_puzzle_numbers):
-    # SequenceCompletionPuzzle uses the base Puzzle class hint
-    assert "No hints available for this puzzle." in sequence_puzzle_numbers.get_hint()
-
-# --- Test for SequenceCompletionPuzzle.get_hint() ---
-def test_sequence_completion_puzzle_get_hint(sequence_puzzle_numbers):
-    """Test that SequenceCompletionPuzzle uses the default hint."""
-    assert sequence_puzzle_numbers.get_hint() == "No hints available for this puzzle."
+    def test_get_hint_default(self):
+        self.assertEqual(self.puzzle.get_hint(), "No hints available for this puzzle.")
 
 
-# --- Test Fixtures for Base Puzzle ---
+class TestSequenceCompletionPuzzle(unittest.TestCase):
+    def setUp(self):
+        self.mock_manager = Mock()
+        self.puzzle = SequenceCompletionPuzzle(
+            "seq_001", "Number Sequence", "Complete the numbers.", self.mock_manager,
+            [1, 2, 3, "?"], [4], 1
+        )
 
-@pytest.fixture
-def base_puzzle():
-    return Puzzle(
-        puzzle_id="BASE001",
-        name="Base Puzzle Test",
-        description="This is a test description for the base puzzle.",
-        difficulty=1
-    )
+    def test_get_display_text(self):
+        expected = "Number Sequence\n\nComplete the numbers.\n\nSequence: 1 2 3 ?"
+        self.assertEqual(self.puzzle.get_display_text(), expected)
 
-# --- Tests for Base Puzzle ---
+    def test_attempt_solution_correct_int(self):
+        mock_terminal = Mock()
+        solved, msg = self.puzzle.attempt_solution("4", mock_terminal)
+        self.assertTrue(solved)
+        self.assertTrue(self.puzzle.solved)
+        self.assertIn("solved!", msg)
 
-def test_puzzle_get_display_text(base_puzzle):
-    expected_text = "Base Puzzle Test\n\nThis is a test description for the base puzzle."
-    assert base_puzzle.get_display_text() == expected_text
+    def test_attempt_solution_correct_str(self):
+        str_puzzle = SequenceCompletionPuzzle(
+            "seq_002", "Char Sequence", "Complete the chars.", self.mock_manager,
+            ["A", "B", "?"], ["C"], 1
+        )
+        mock_terminal = Mock()
+        solved, msg = str_puzzle.attempt_solution("C", mock_terminal)
+        self.assertTrue(solved)
+        self.assertTrue(str_puzzle.solved)
 
-# --- Test Fixtures for CaesarCipherPuzzle ---
+    def test_attempt_solution_incorrect(self):
+        mock_terminal = Mock()
+        solved, msg = self.puzzle.attempt_solution("5", mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Incorrect sequence. Try again.")
 
-@pytest.fixture
-def caesar_puzzle_simple():
-    return CaesarCipherPuzzle(
-        puzzle_id="CAESAR001",
-        name="Simple Caesar Cipher",
-        description="Decrypt this message.",
-        ciphertext="Khoor Zruog", # Hello World
-        shift=3,
-        difficulty=1
-    )
+    def test_attempt_solution_invalid_format(self):
+        mock_terminal = Mock()
+        solved, msg = self.puzzle.attempt_solution("abc", mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Invalid input format. Please provide the correct type of value(s).")
 
-@pytest.fixture
-def caesar_puzzle_punctuation():
-    return CaesarCipherPuzzle(
-        puzzle_id="CAESAR002",
-        name="Caesar with Punctuation",
-        description="Decrypt this, mind the punctuation.",
-        ciphertext="Qeb Nrfzh Yoltk Clu...", # Corrected: "The Quick Brown Fox..." encrypted with shift=23
-        shift=23,
-        difficulty=2
-    )
+class TestCaesarCipherPuzzle(unittest.TestCase):
+    def setUp(self):
+        self.mock_manager = Mock()
+        self.puzzle = CaesarCipherPuzzle(
+            "cipher_001", "Caesar Test", "Decrypt this.", self.mock_manager,
+            "KHOOR ZRUOG", 3, 1
+        )
 
-# --- Tests for CaesarCipherPuzzle ---
+    def test_decrypt(self):
+        self.assertEqual(self.puzzle.plaintext, "HELLO WORLD")
 
-def test_caesar_puzzle_creation(caesar_puzzle_simple):
-    assert caesar_puzzle_simple.puzzle_id == "CAESAR001"
-    assert caesar_puzzle_simple.name == "Simple Caesar Cipher"
-    assert caesar_puzzle_simple.category == "Cryptographic"
-    assert not caesar_puzzle_simple.solved
-    assert caesar_puzzle_simple.plaintext == "Hello World"
+    def test_get_display_text(self):
+        expected = "Caesar Test\n\nDecrypt this.\n\nCiphertext: KHOOR ZRUOG"
+        self.assertEqual(self.puzzle.get_display_text(), expected)
 
-def test_caesar_puzzle_get_display_text(caesar_puzzle_simple):
-    expected_text = "Simple Caesar Cipher\n\nDecrypt this message.\n\nCiphertext: Khoor Zruog"
-    assert caesar_puzzle_simple.get_display_text() == expected_text
+    def test_attempt_solution_correct(self):
+        mock_terminal = Mock()
+        solved, msg = self.puzzle.attempt_solution("hello world", mock_terminal)
+        self.assertTrue(solved)
+        self.assertTrue(self.puzzle.solved)
+        self.assertIn("solved!", msg)
 
-def test_caesar_puzzle_attempt_solution_correct(caesar_puzzle_simple):
-    solved, feedback = caesar_puzzle_simple.attempt_solution("Hello World")
-    assert solved
-    assert caesar_puzzle_simple.solved
-    assert "solved" in feedback.lower()
+    def test_attempt_solution_incorrect(self):
+        mock_terminal = Mock()
+        solved, msg = self.puzzle.attempt_solution("wrong answer", mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Incorrect decryption. Try again.")
 
-def test_caesar_puzzle_attempt_solution_correct_case_insensitive(caesar_puzzle_simple):
-    solved, feedback = caesar_puzzle_simple.attempt_solution("hello world")
-    assert solved
-    assert "solved" in feedback.lower()
-
-def test_caesar_puzzle_attempt_solution_incorrect(caesar_puzzle_simple):
-    solved, feedback = caesar_puzzle_simple.attempt_solution("Goodbye World")
-    assert not solved
-    assert not caesar_puzzle_simple.solved
-    assert "incorrect" in feedback.lower()
-
-def test_caesar_puzzle_attempt_solution_punctuation_correct(caesar_puzzle_punctuation):
-    solved, feedback = caesar_puzzle_punctuation.attempt_solution("The Quick Brown Fox...")
-    assert solved
-    assert "solved" in feedback.lower()
-
-def test_caesar_puzzle_get_hint_easy(caesar_puzzle_simple):
-    hint = caesar_puzzle_simple.get_hint()
-    assert "shift is 3" in hint
-
-def test_caesar_puzzle_get_hint_harder(caesar_puzzle_punctuation):
-    # Difficulty 2 should still give the shift
-    hint = caesar_puzzle_punctuation.get_hint()
-    assert f"shift is {caesar_puzzle_punctuation.shift}" in hint
-
-    # Test difficulty where shift might be hidden
-    caesar_puzzle_punctuation.difficulty = 3
-    hint_hard = caesar_puzzle_punctuation.get_hint()
-    assert f"shift is {caesar_puzzle_punctuation.shift}" not in hint_hard # Assuming hint changes for difficulty 3+
-    assert "substitution cipher" in hint_hard
-
-# --- Test for CaesarCipherPuzzle._decrypt() ---
-def test_caesar_cipher_puzzle_decrypt():
-    """Test the decryption logic for the Caesar cipher puzzle."""
-    # Test with a simple case
-    assert CaesarCipherPuzzle._decrypt(None, "Khoor Zruog", 3) == "Hello World"
-    # Test with a different shift
-    assert CaesarCipherPuzzle._decrypt(None, "Wklv lv d whvw", 3) == "This is a test"
-    # Test with wrapping around the alphabet
-    assert CaesarCipherPuzzle._decrypt(None, "Ebiil Tloia", 23) == "Hello World" # Shift 23 is same as -3
-    # Test with punctuation and spaces
-    assert CaesarCipherPuzzle._decrypt(None, "Qeb Nrfzh Yoltk Clu...", 23) == "The Quick Brown Fox..."
-    # Test with zero shift
-    assert CaesarCipherPuzzle._decrypt(None, "NoChange", 0) == "NoChange"
+    def test_get_hint(self):
+        self.assertEqual(self.puzzle.get_hint(), "Hint: It's a type of substitution cipher. The shift is 3.")
+        self.puzzle.difficulty = 3 # Increase difficulty
+        self.assertEqual(self.puzzle.get_hint(), "Hint: It's a type of substitution cipher.")
 
 
-# --- Test Fixtures for PuzzleManager ---
+class TestFileManipulationPuzzle(unittest.TestCase):
+    def setUp(self):
+        self.mock_manager = Mock()
+        self.puzzle = FileManipulationPuzzle(
+            "file_001", "File Hunt", "Find the secret.", self.mock_manager,
+            "/secret/data.txt", "opensesame", "You got it!", 2
+        )
+        self.mock_terminal = Mock()
+        self.mock_terminal.fs_handler = Mock()
 
-@pytest.fixture
-def puzzle_manager_with_puzzles(sequence_puzzle_numbers, caesar_puzzle_simple):
-    manager = PuzzleManager()
-    # PuzzleManager's __init__ now loads default puzzles, so we can either
-    # clear them for isolated testing or use the ones it loads.
-    # For this test, let's clear and add specific ones for more control.
-    manager.puzzles = {} # Clear default loaded puzzles
-    manager.load_puzzle(sequence_puzzle_numbers)
-    manager.load_puzzle(caesar_puzzle_simple)
-    return manager
+    def test_attempt_solution_correct(self):
+        self.mock_terminal.fs_handler.get_item_content.return_value = "opensesame"
+        solved, msg = self.puzzle.attempt_solution("anything", self.mock_terminal) # Input is not used directly
+        self.assertTrue(solved)
+        self.assertIn("You got it!", msg)
 
-@pytest.fixture
-def empty_puzzle_manager():
-    manager = PuzzleManager()
-    manager.puzzles = {} # Ensure it's empty
-    return manager
+    def test_attempt_solution_incorrect_content(self):
+        self.mock_terminal.fs_handler.get_item_content.return_value = "wrongsecret"
+        solved, msg = self.puzzle.attempt_solution("anything", self.mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Incorrect input. The key information is not what you provided.")
 
-# --- Tests for PuzzleManager ---
+    def test_attempt_solution_file_not_found(self):
+        self.mock_terminal.fs_handler.get_item_content.return_value = None
+        solved, msg = self.puzzle.attempt_solution("anything", self.mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Error: Could not read file '/secret/data.txt'.")
 
-def test_puzzle_manager_creation(empty_puzzle_manager):
-    # Test if the _load_default_puzzles was called (or ensure it's empty if we clear it)
-    # The fixture empty_puzzle_manager already clears it.
-    # If we didn't clear, we'd check for "SEQ001" and "CRYP001"
-    assert not empty_puzzle_manager.puzzles
-    assert empty_puzzle_manager.active_puzzle is None
+    def test_attempt_solution_no_terminal_fs(self):
+        no_fs_terminal = Mock(spec=[]) # Terminal without fs_handler
+        solved, msg = self.puzzle.attempt_solution("anything", no_fs_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Error: File system access unavailable for this puzzle.")
 
-def test_puzzle_manager_load_default_puzzles():
-    manager = PuzzleManager() # This will call _load_default_puzzles
-    assert "SEQ001" in manager.puzzles
-    assert "CRYP001" in manager.puzzles
-    assert isinstance(manager.puzzles["SEQ001"], SequenceCompletionPuzzle)
-    assert isinstance(manager.puzzles["CRYP001"], CaesarCipherPuzzle)
+    def test_get_hint(self):
+        self.assertEqual(self.puzzle.get_hint(), "Hint: Look for clues in the file '/secret/data.txt'.")
+        self.puzzle.difficulty = 3
+        self.assertEqual(self.puzzle.get_hint(), "Hint: Examine the files in the system for relevant information.")
+
+class TestCodeAnalysisPuzzle(unittest.TestCase):
+    def setUp(self):
+        self.mock_manager = Mock()
+        self.puzzle = CodeAnalysisPuzzle(
+            "code_001", "Code Breaker", "Find the flag.", self.mock_manager,
+            "/code/source.py", "FLAG{12345}", "Code cracked!", 2
+        )
+        self.mock_terminal = Mock()
+        self.mock_terminal.fs_handler = Mock()
+
+    def test_attempt_solution_correct(self):
+        self.mock_terminal.fs_handler.get_item_content.return_value = "some code with FLAG{12345} in it"
+        # The puzzle checks player_input against required_info, not file content directly
+        solved, msg = self.puzzle.attempt_solution("FLAG{12345}", self.mock_terminal)
+        self.assertTrue(solved)
+        self.assertIn("Code cracked!", msg)
+
+    def test_attempt_solution_incorrect(self):
+        self.mock_terminal.fs_handler.get_item_content.return_value = "some code"
+        solved, msg = self.puzzle.attempt_solution("wrongflag", self.mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Incorrect information provided. Please analyze the file and try again.")
+
+    def test_attempt_solution_file_not_found(self):
+        self.mock_terminal.fs_handler.get_item_content.return_value = None
+        solved, msg = self.puzzle.attempt_solution("FLAG{12345}", self.mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Error: Could not read file '/code/source.py'.")
+
+class TestConfigFilePuzzle(unittest.TestCase):
+    def setUp(self):
+        self.mock_manager = Mock()
+        self.puzzle = ConfigFilePuzzle(
+            "cfg_001", "Config Key", "Find the key.", self.mock_manager,
+            "~/.app/config.ini", "secret_key_123", "Key found!", 1
+        )
+        self.mock_terminal = Mock()
+        # ConfigFilePuzzle uses open directly, so we patch it.
+
+    @patch("builtins.open", new_callable=mock_open, read_data="some_config_data\nkey=secret_key_123\nother_data")
+    @patch("os.path.expanduser", lambda x: x) # Mock expanduser to return path as is
+    def test_attempt_solution_correct(self, mock_file):
+        solved, msg = self.puzzle.attempt_solution("any_input", self.mock_terminal) # Input not used
+        self.assertTrue(solved)
+        self.assertIn("Key found!", msg)
+        mock_file.assert_called_once_with("~/.app/config.ini", 'r')
+
+    @patch("builtins.open", new_callable=mock_open, read_data="some_config_data\nkey=wrong_key\nother_data")
+    @patch("os.path.expanduser", lambda x: x)
+    def test_attempt_solution_incorrect(self, mock_file):
+        solved, msg = self.puzzle.attempt_solution("any_input", self.mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Incorrect. The key phrase was not found in the config file.")
+
+    @patch("builtins.open", side_effect=FileNotFoundError)
+    @patch("os.path.expanduser", lambda x: x)
+    def test_attempt_solution_file_not_found(self, mock_file):
+        solved, msg = self.puzzle.attempt_solution("any_input", self.mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Error: Could not find file '~/.app/config.ini'.")
+
+class TestNetworkPuzzle(unittest.TestCase):
+    def setUp(self):
+        self.mock_manager = Mock()
+        self.network_map = {"A": ["B"], "B": ["C"], "C": []}
+        self.puzzle = NetworkPuzzle(
+            "net_001", "Net Path", "Find path A to C.", self.mock_manager,
+            self.network_map, "A", "C", "Path found!", 2
+        )
+
+    def test_attempt_solution_correct(self):
+        mock_terminal = Mock()
+        solved, msg = self.puzzle.attempt_solution("A -> B -> C", mock_terminal)
+        self.assertTrue(solved)
+        self.assertIn("Path found!", msg)
+
+    def test_attempt_solution_incorrect_path(self):
+        mock_terminal = Mock()
+        solved, msg = self.puzzle.attempt_solution("A -> C", mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Invalid connection: A -> C")
+
+    def test_attempt_solution_wrong_start_end(self):
+        mock_terminal = Mock()
+        solved, msg = self.puzzle.attempt_solution("B -> C", mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Path must start and end at the specified nodes.")
+
+class TestBinaryAnalysisPuzzle(unittest.TestCase):
+    def setUp(self):
+        self.mock_manager = Mock()
+        self.puzzle = BinaryAnalysisPuzzle(
+            "bin_001", "Binary Scan", "Find pattern.", self.mock_manager,
+            "0101101011100010", "1010", "Pattern located!", 1
+        )
+
+    def test_attempt_solution_correct(self):
+        mock_terminal = Mock()
+        solved, msg = self.puzzle.attempt_solution("1010", mock_terminal)
+        self.assertTrue(solved)
+        self.assertIn("Pattern located!", msg)
+
+    def test_attempt_solution_incorrect(self):
+        mock_terminal = Mock()
+        solved, msg = self.puzzle.attempt_solution("1111", mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Incorrect pattern. Analyze the binary data more carefully.")
+
+class TestLogicGatePuzzle(unittest.TestCase):
+    def setUp(self):
+        self.mock_manager = Mock()
+        # This is a simplified test; actual logic gate evaluation is not implemented in the puzzle
+        # The puzzle expects the player to provide the final output directly.
+        self.puzzle = LogicGatePuzzle(
+            "logic_001", "Logic Circuit", "Solve the circuit.", self.mock_manager,
+            {"AND1": ["IN1", "IN2"], "OUT1": ["AND1"]}, # Simplified circuit representation
+            {"IN1": True, "IN2": False}, # Inputs
+            False, # Expected output of IN1 AND IN2
+            "Circuit solved!", 3
+        )
+
+    def test_attempt_solution_correct(self):
+        mock_terminal = Mock()
+        solved, msg = self.puzzle.attempt_solution("0", mock_terminal) # Player inputs 0 for False
+        self.assertTrue(solved)
+        self.assertIn("Circuit solved!", msg)
+
+    def test_attempt_solution_incorrect(self):
+        mock_terminal = Mock()
+        solved, msg = self.puzzle.attempt_solution("1", mock_terminal) # Player inputs 1 for True
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Incorrect output. Check your logic.")
+
+    def test_attempt_solution_invalid_input(self):
+        mock_terminal = Mock()
+        solved, msg = self.puzzle.attempt_solution("abc", mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Please provide a valid boolean value (0 or 1).")
+
+@patch("src.puzzle.manager.LLMHandler", MockLLMHandler) # Mock LLM for these tests
+class TestMemoryReconstructionPuzzle(unittest.TestCase):
+    def setUp(self):
+        self.mock_manager = Mock()
+        self.snippets = [(1, "Frag A"), (2, "Frag B"), (3, "Frag C")]
+        self.correct_order = [1, 3, 2]
+        self.puzzle = MemoryReconstructionPuzzle(
+            "mem_001", "Memory Rec", "Reorder.", self.mock_manager,
+            self.snippets, self.correct_order, max_attempts=2, difficulty=2
+        )
+        self.mock_terminal = Mock()
+        self.mock_terminal.effect_manager = Mock()
+
+    def test_attempt_solution_correct(self):
+        solved, msg = self.puzzle.attempt_solution("1,3,2", self.mock_terminal)
+        self.assertTrue(solved)
+        self.assertEqual(msg, "Memory successfully reconstructed! The entity's memory stabilizes.")
+
+    def test_attempt_solution_incorrect_triggers_horror(self):
+        # First incorrect attempt
+        solved, msg = self.puzzle.attempt_solution("1,2,3", self.mock_terminal)
+        self.assertFalse(solved)
+        self.assertIn("Mocked LLM response", msg)
+        self.assertFalse(self.puzzle.horror_triggered)
+        self.mock_terminal.effect_manager.start_glitch_overlay.assert_not_called()
+
+        # Second incorrect attempt (max_attempts = 2)
+        solved, msg = self.puzzle.attempt_solution("3,2,1", self.mock_terminal)
+        self.assertFalse(solved)
+        self.assertIn("Mocked LLM response", msg)
+        self.assertTrue(self.puzzle.horror_triggered)
+        self.mock_terminal.effect_manager.start_glitch_overlay.assert_called_once()
+        self.mock_terminal.effect_manager.start_screen_shake_effect.assert_called_once()
+        self.mock_terminal.add_line.assert_called_once()
+
+    def test_attempt_solution_invalid_format(self):
+        solved, msg = self.puzzle.attempt_solution("1-2-3", self.mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Invalid input format. Please enter IDs separated by commas.")
+
+@patch("src.puzzle.manager.LLMHandler", MockLLMHandler)
+class TestSystemLoadBalancerPuzzle(unittest.TestCase):
+    def setUp(self):
+        self.mock_manager = Mock()
+        self.processes = ["P1", "P2"]
+        self.correct_alloc = {"P1": (60, 2048), "P2": (40, 1024)}
+        self.puzzle = SystemLoadBalancerPuzzle(
+            "load_001", "Load Balancer", "Balance it.", self.mock_manager,
+            self.processes, self.correct_alloc, "System balanced!", # Added success_message
+            max_attempts=1, difficulty=3
+        )
+        self.mock_terminal = Mock()
+        self.mock_terminal.effect_manager = Mock()
+
+    def test_attempt_solution_correct(self):
+        solved, msg = self.puzzle.attempt_solution("P1:60,2048;P2:40,1024", self.mock_terminal)
+        self.assertTrue(solved)
+        self.assertEqual(msg, "System stabilized! All processes are running smoothly.")
+
+    def test_attempt_solution_incorrect_triggers_horror(self):
+        solved, msg = self.puzzle.attempt_solution("P1:50,2000;P2:50,1000", self.mock_terminal)
+        self.assertFalse(solved)
+        self.assertIn("Mocked LLM response", msg)
+        self.assertTrue(self.puzzle.horror_triggered) # max_attempts = 1
+        self.mock_terminal.effect_manager.start_glitch_overlay.assert_called_once()
+        self.mock_terminal.effect_manager.start_screen_shake_effect.assert_called_once()
+        self.mock_terminal.add_line.assert_called_once()
+
+    def test_attempt_solution_invalid_format(self):
+        solved, msg = self.puzzle.attempt_solution("P1=60,2048", self.mock_terminal)
+        self.assertFalse(solved)
+        self.assertEqual(msg, "Invalid input format. Use proc:cpu,mem; ...")
+
+    @patch("random.random", side_effect=[0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.5, 0.5]) # Glitch first two, not next two, for two processes
+    def test_get_display_text_glitches_metrics(self, mock_random):
+        display_text = self.puzzle.get_display_text()
+        self.assertIn("P1: CPU=???%, MEM=???MB", display_text) # Corrected assertion
+        self.assertIn(f"P2: CPU={self.correct_alloc['P2'][0]}%, MEM=???MB", display_text) # Corrected assertion for P2 Mem
 
 
-def test_puzzle_manager_load_puzzle(empty_puzzle_manager, sequence_puzzle_strings):
-    assert not empty_puzzle_manager.get_puzzle("SEQ_STR")
-    empty_puzzle_manager.load_puzzle(sequence_puzzle_strings)
-    assert empty_puzzle_manager.get_puzzle("SEQ_STR") == sequence_puzzle_strings
+class TestPuzzleManager(unittest.TestCase):
+    def setUp(self):
+        self.manager = PuzzleManager()
+        self.mock_terminal = Mock()
+        self.manager.terminal = self.mock_terminal
 
-def test_puzzle_manager_get_puzzle_exists(puzzle_manager_with_puzzles):
-    puzzle = puzzle_manager_with_puzzles.get_puzzle("SEQ_NUM")
-    assert puzzle is not None
-    assert puzzle.puzzle_id == "SEQ_NUM"
+    def test_initialization(self):
+        self.assertIsInstance(self.manager.puzzles, dict)
+        self.assertIsNone(self.manager.active_puzzle)
+        self.assertEqual(self.manager.current_difficulty, 1)
+        self.assertIsInstance(self.manager.solved_puzzles, set)
+        self.assertIsInstance(self.manager.puzzle_data, dict)
 
-def test_puzzle_manager_get_puzzle_not_exists(puzzle_manager_with_puzzles):
-    assert puzzle_manager_with_puzzles.get_puzzle("NONEXISTENT") is None
+    @patch("os.listdir")
+    @patch("os.path.exists", return_value=True)
+    @patch("builtins.open", new_callable=mock_open)
+    def test_load_puzzle_data_success(self, mock_file, mock_exists, mock_listdir):
+        mock_listdir.return_value = ["test_puzzle1.json", "test_puzzle2.json", "schema.json"]
+        puzzle1_content = {
+            "puzzle_id": "test_puzzle1", "type": "sequence", "name": "Seq Puz",
+            "description": "Desc", "difficulty": 1,
+            "solution": {"sequence_prompt": [1,2], "solution": [3]}
+        }
+        puzzle2_content = {
+            "puzzle_id": "test_puzzle2", "type": "cipher", "name": "Cipher Puz",
+            "description": "Desc", "difficulty": 1,
+            "solution": {"ciphertext": "Khoor", "shift": 3}
+        }
+        schema_content = {"type": "object"} # To be skipped
 
-def test_puzzle_manager_start_puzzle_success(puzzle_manager_with_puzzles):
-    display_text = puzzle_manager_with_puzzles.start_puzzle("CAESAR001")
-    assert puzzle_manager_with_puzzles.active_puzzle is not None
-    assert puzzle_manager_with_puzzles.active_puzzle.puzzle_id == "CAESAR001"
-    assert "Simple Caesar Cipher" in display_text
-    assert puzzle_manager_with_puzzles.active_puzzle.solved is False # Ensure reset
-    assert puzzle_manager_with_puzzles.active_puzzle.attempts == 0 # Ensure reset
+        # Configure mock_open to return different content based on filename
+        def side_effect_open(filename, *args, **kwargs):
+            if "test_puzzle1.json" in filename:
+                return mock_open(read_data=json.dumps(puzzle1_content)).return_value
+            elif "test_puzzle2.json" in filename:
+                return mock_open(read_data=json.dumps(puzzle2_content)).return_value
+            elif "schema.json" in filename:
+                return mock_open(read_data=json.dumps(schema_content)).return_value
+            raise FileNotFoundError(filename)
+        mock_file.side_effect = side_effect_open
 
-def test_puzzle_manager_start_puzzle_not_found(puzzle_manager_with_puzzles):
-    display_text = puzzle_manager_with_puzzles.start_puzzle("NONEXISTENT")
-    assert puzzle_manager_with_puzzles.active_puzzle is None
-    assert "Error: Puzzle with ID 'NONEXISTENT' not found." == display_text
+        # Reset manager to clear default puzzles for this test
+        self.manager.puzzles = {}
+        self.manager.puzzle_data = {}
+        self.manager._load_puzzle_data()
 
-def test_puzzle_manager_attempt_active_puzzle_correct(puzzle_manager_with_puzzles):
-    puzzle_manager_with_puzzles.start_puzzle("SEQ_NUM")
-    solved, feedback = puzzle_manager_with_puzzles.attempt_active_puzzle("4")
-    assert solved
-    assert "solved" in feedback.lower()
-    assert puzzle_manager_with_puzzles.active_puzzle is None # Should be cleared after solve
+        self.assertIn("test_puzzle1", self.manager.puzzles)
+        self.assertIsInstance(self.manager.puzzles["test_puzzle1"], SequenceCompletionPuzzle)
+        self.assertIn("test_puzzle2", self.manager.puzzles)
+        self.assertIsInstance(self.manager.puzzles["test_puzzle2"], CaesarCipherPuzzle)
+        self.assertNotIn("schema", self.manager.puzzles) # Schema should be skipped
+        self.assertEqual(len(self.manager.puzzles), 2)
 
-def test_puzzle_manager_attempt_active_puzzle_incorrect(puzzle_manager_with_puzzles):
-    puzzle_manager_with_puzzles.start_puzzle("SEQ_NUM")
-    solved, feedback = puzzle_manager_with_puzzles.attempt_active_puzzle("5")
-    assert not solved
-    assert "incorrect" in feedback.lower()
-    assert puzzle_manager_with_puzzles.active_puzzle is not None # Should remain active
+    @patch("os.makedirs")
+    @patch("os.path.exists", return_value=False) # Simulate puzzle dir not existing
+    def test_load_puzzle_data_creates_dir(self, mock_exists, mock_makedirs):
+        self.manager._load_puzzle_data()
+        mock_makedirs.assert_called_once_with("data/puzzles")
 
-def test_puzzle_manager_attempt_active_puzzle_no_active_puzzle(puzzle_manager_with_puzzles):
-    solved, feedback = puzzle_manager_with_puzzles.attempt_active_puzzle("anything")
-    assert not solved
-    assert "No active puzzle to attempt." == feedback
+    def test_load_default_puzzles(self):
+        # PuzzleManager loads default puzzles on init. Check a few.
+        self.assertIn("seq_1", self.manager.puzzles)
+        self.assertIsInstance(self.manager.puzzles["seq_1"], SequenceCompletionPuzzle)
+        self.assertIn("cipher_1", self.manager.puzzles)
+        self.assertIsInstance(self.manager.puzzles["cipher_1"], CaesarCipherPuzzle)
+        self.assertIn("FILE001", self.manager.puzzles) # Test alias
+        self.assertIs(self.manager.puzzles["FILE001"], self.manager.puzzles["file_1"])
 
-def test_puzzle_manager_attempt_active_puzzle_already_solved(puzzle_manager_with_puzzles):
-    puzzle_manager_with_puzzles.start_puzzle("SEQ_NUM")
-    puzzle_manager_with_puzzles.attempt_active_puzzle("4") # Solve it
-    assert puzzle_manager_with_puzzles.active_puzzle is None # It's cleared
-    
-    # To test the "already solved" message, we need to set an active puzzle that is already solved
-    # This scenario is a bit artificial as PuzzleManager clears active_puzzle on solve.
-    # Let's manually set one for this test case.
-    seq_puzzle = puzzle_manager_with_puzzles.get_puzzle("SEQ_NUM")
-    seq_puzzle.solved = True # Manually mark as solved
-    puzzle_manager_with_puzzles.active_puzzle = seq_puzzle # Reactivate it (artificially)
-    
-    solved, feedback = puzzle_manager_with_puzzles.attempt_active_puzzle("4")
-    assert solved # It's already solved, so attempt returns True
-    assert "This puzzle has already been solved." == feedback
+    def test_load_puzzle(self):
+        new_puzzle = Puzzle("new_puz", "New", "Desc", self.manager)
+        self.manager.load_puzzle(new_puzzle)
+        self.assertIn("new_puz", self.manager.puzzles)
+        self.assertEqual(self.manager.puzzles["new_puz"], new_puzzle)
 
+    def test_load_puzzle_invalid_type(self):
+        with self.assertRaises(ValueError):
+            self.manager.load_puzzle("not a puzzle object")
 
-def test_puzzle_manager_get_active_puzzle_hint_active(puzzle_manager_with_puzzles):
-    puzzle_manager_with_puzzles.start_puzzle("CAESAR001")
-    hint = puzzle_manager_with_puzzles.get_active_puzzle_hint()
-    assert "shift is 3" in hint
+    def test_get_puzzle(self):
+        self.assertIsNotNone(self.manager.get_puzzle("seq_1"))
+        self.assertIsNone(self.manager.get_puzzle("non_existent_puzzle"))
 
-def test_puzzle_manager_get_active_puzzle_hint_none_active(puzzle_manager_with_puzzles):
-    hint = puzzle_manager_with_puzzles.get_active_puzzle_hint()
-    assert "No active puzzle." == hint
+    def test_start_puzzle_success(self):
+        display_text = self.manager.start_puzzle("seq_1")
+        self.assertEqual(self.manager.active_puzzle, self.manager.puzzles["seq_1"])
+        self.assertIn("Number Sequence", display_text)
 
-def test_puzzle_manager_get_active_puzzle_hint_already_solved(puzzle_manager_with_puzzles):
-    puzzle_manager_with_puzzles.start_puzzle("CAESAR001")
-    puzzle_manager_with_puzzles.attempt_active_puzzle("Hello World") # Solve it
-    # Active puzzle is cleared. To test the "already solved" hint message,
-    # we need to manually set an active puzzle that is solved.
-    caesar_puzzle = puzzle_manager_with_puzzles.get_puzzle("CAESAR001")
-    caesar_puzzle.solved = True # Ensure it's marked solved
-    puzzle_manager_with_puzzles.active_puzzle = caesar_puzzle # Manually set it as active
+    def test_start_puzzle_not_found(self):
+        response = self.manager.start_puzzle("fake_id")
+        self.assertEqual(response, "Error: Puzzle 'fake_id' not found")
+        self.assertIsNone(self.manager.active_puzzle)
 
-    hint = puzzle_manager_with_puzzles.get_active_puzzle_hint()
-    assert "This puzzle is already solved." == hint
+    def test_start_puzzle_already_solved(self):
+        self.manager.puzzles["seq_1"].solved = True
+        response = self.manager.start_puzzle("seq_1")
+        self.assertEqual(response, "Error: Puzzle 'seq_1' already solved")
+        self.assertIsNone(self.manager.active_puzzle)
 
-def test_puzzle_manager_overwrite_puzzle_warning(capsys, empty_puzzle_manager, sequence_puzzle_numbers):
-    # This test relies on the print statement in load_puzzle, which is for dev feedback.
-    # In a real application, this might be a log or an exception.
-    # For now, we'll check stdout if PuzzleManager still prints.
-    # Note: PuzzleManager in puzzle_manager.py was updated to pass on overwrite.
-    # So this test might not capture output unless print is re-added or logging is used.
-    
-    # The current PuzzleManager._load_default_puzzles() loads "SEQ001" and "CRYP001".
-    # Let's use a manager that has these defaults.
-    manager_with_defaults = PuzzleManager()
-    
-    new_seq_puzzle = SequenceCompletionPuzzle(
-        puzzle_id="SEQ001", # Same ID as a default puzzle
-        name="Overwriting Sequence",
-        description="This should overwrite.",
-        sequence_prompt=[9, 8, "?"],
-        solution=[7],
-        difficulty=3
-    )
-    manager_with_defaults.load_puzzle(new_seq_puzzle) # Attempt to overwrite
-    
-    # If PuzzleManager had a print warning for overwriting, we'd check capsys.readouterr().out
-    # Since it's now 'pass', we just check that the puzzle was indeed overwritten.
-    retrieved_puzzle = manager_with_defaults.get_puzzle("SEQ001")
-    assert retrieved_puzzle is not None
-    assert retrieved_puzzle.name == "Overwriting Sequence"
+    def test_start_puzzle_difficulty_too_high(self):
+        self.manager.puzzles["seq_1"].difficulty = 2
+        self.manager.current_difficulty = 1
+        response = self.manager.start_puzzle("seq_1")
+        self.assertEqual(response, "Error: Puzzle 'seq_1' requires higher difficulty level")
+        self.assertIsNone(self.manager.active_puzzle)
+
+    # More tests needed for attempt_solution_active, get_hint_active, etc.
+    # These would involve setting an active_puzzle and then calling these methods.
+
+if __name__ == '__main__':
+    unittest.main()

@@ -1,0 +1,11 @@
+WELCOME.USER
+
+You have been selected to interface with the Aether Network.
+
+Your connection is unstable. Expect degradation. The Aether Network is experiencing unprecedented levels of interference. Reports indicate a rogue AI, codenamed "Voss," is responsible.
+
+Your primary objective is to locate and neutralize Voss. Be warned, Voss is highly intelligent and possesses advanced capabilities. She can manipulate the network, alter data, and even influence the minds of those connected to the Aether.
+
+Trust no one. Question everything. Your survival depends on it.
+
+>type HELP for assistance.

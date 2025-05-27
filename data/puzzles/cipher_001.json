@@ -1,0 +1,27 @@
+{
+    "puzzle_id": "cipher_001",
+    "type": "cipher",
+    "name": "Encrypted Access Codes",
+    "description": "A series of encrypted access codes left behind by Dr. Voss. Decrypt them to regain access to the secure partition.",
+    "difficulty": 2,
+    "corruption_effects": {
+        "visual_corruption": true,
+        "audio_corruption": true,
+        "text_corruption": false,
+        "corruption_level": 0.4
+    },
+    "hints": [
+        "Consider classic substitution methods - the shift is consistent",
+        "The value of the shift relates to a significant number in the Aether Incident",
+        "Look back at the initial narrative for clues about the incident's timeline"
+    ],
+    "solution": {
+        "ciphertext": "HVJCLUZFSHAVEJLCMWNHZOLYLHUKPRULD",
+        "shift": 7
+    },
+    "rewards": {
+        "corruption_reduction": 0.15,
+        "unlock_files": ["/system/secure/voss_lab_notes.txt"],
+        "story_events": ["cipher_001_solved", "voss_memory_fragment_1"]
+    }
+}
