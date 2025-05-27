@@ -29,7 +29,6 @@ class CommandCategory(Enum):
     PUZZLE = "puzzle"
     INVENTORY = "inventory"
     HELP = "help"
-    UTILITY = "utility"
 
 @dataclass
 class Command:
@@ -725,80 +724,7 @@ class MainTerminalHandler:
             handler=self._cmd_traverse
         ))
 
-        # Advanced Discovery Commands
-        self._register_command(Command(
-            name="research",
-            aliases=["study", "analyze_topic"],
-            category=CommandCategory.INTERACTION,
-            description="Research a topic using available knowledge",
-            usage="research <topic>",
-            handler=self._cmd_research
-        ))
-
-        self._register_command(Command(
-            name="teach",
-            aliases=["share_knowledge", "inform"],
-            category=CommandCategory.INTERACTION,
-            description="Teach knowledge to an entity",
-            usage="teach <entity> <knowledge>",
-            handler=self._cmd_teach
-        ))
-
-        self._register_command(Command(
-            name="discover",
-            aliases=["reveal", "uncover"],
-            category=CommandCategory.INTERACTION,
-            description="Attempt to discover hidden connections or revelations",
-            usage="discover <target>",
-            handler=self._cmd_discover
-        ))
-
-        self._register_command(Command(
-            name="connect",
-            aliases=["link", "correlate"],
-            category=CommandCategory.INTERACTION,
-            description="Attempt to connect two discovered entities or concepts",
-            usage="connect <entity1> <entity2>",
-            handler=self._cmd_connect_entities
-        ))
-
-        self._register_command(Command(
-            name="hint",
-            aliases=["guidance", "assistance"],
-            category=CommandCategory.UTILITY,
-            description="Request contextual guidance for current situation",
-            usage="hint [context]",
-            handler=self._cmd_hint
-        ))
-
-        self._register_command(Command(
-            name="memory",
-            aliases=["recall", "remember"],
-            category=CommandCategory.INTERACTION,
-            description="Access memories or records of discovered entities",
-            usage="memory <entity>",
-            handler=self._cmd_memory
-        ))
-
-        self._register_command(Command(
-            name="network_map",
-            aliases=["map", "connections"],
-            category=CommandCategory.NAVIGATION,
-            description="Display discovered entity relationship network",
-            usage="network_map [entity]",
-            handler=self._cmd_network_map
-        ))
-
-        self._register_command(Command(
-            name="narrative_status",
-            aliases=["story_progress", "threads"],
-            category=CommandCategory.INTERACTION,
-            description="Display active narrative threads and story progress",
-            usage="narrative_status",
-            handler=self._cmd_narrative_status
-        ))
-
-        # ... rest of existing commands ...
+        # ... existing command registrations continue ...
     def _register_command(self, command: Command):
         """Register a single command"""
         self.commands[command.name] = command
@@ -824,20 +750,12 @@ class MainTerminalHandler:
                 'corruption_level': getattr(self.file_system.game_state, 'corruption_level', 0.0) if hasattr(self.file_system, 'game_state') else 0.0,
                 'current_puzzle': 'none',  # TODO: Get from puzzle manager
                 'system_state': 'terminal',
-                'current_layer': getattr(self.world_manager, 'current_layer', 1) if self.world_manager else 1,
-                'history': self.history[-5:] if len(self.history) > 5 else self.history,
+                'history': [],  # TODO: Get command history
                 'recent_entities': []
             }
             
-            # Use enhanced knowledge graph-aware Rusty response if available
-            if hasattr(self.llm_handler, 'knowledge_graph') and self.llm_handler.knowledge_graph:
-                # Use contextual entity response for Rusty as an entity
-                response = self.llm_handler.generate_contextual_entity_response(
-                    'rusty', 'ask', prompt, context
-                )
-            else:
-                # Fallback to standard Rusty response generation
-                response = self.llm_handler.generate_rusty_response(prompt, context)
+            # Use proper Rusty response generation
+            response = self.llm_handler.generate_rusty_response(prompt, context)
             
             # Add response to terminal with distinctive formatting
             self.terminal_renderer.add_to_buffer(f"[Rusty] {response}")
@@ -924,20 +842,11 @@ class MainTerminalHandler:
                 'location': self.file_system.current_directory,
                 'corruption_level': getattr(self.file_system.game_state, 'corruption_level', 0.0) if hasattr(self.file_system, 'game_state') else 0.0,
                 'system_state': 'terminal',
-                'current_layer': getattr(self.world_manager, 'current_layer', 1) if self.world_manager else 1,
                 'history': self.history[-5:] if len(self.history) > 5 else self.history  # Last 5 commands
             }
             
-            # Use enhanced contextual entity response if knowledge graph is available
-            if hasattr(self.llm_handler, 'knowledge_graph') and self.llm_handler.knowledge_graph:
-                response = self.llm_handler.generate_contextual_entity_response(
-                    entity_name, interaction_type, message, context
-                )
-            else:
-                # Fallback to standard entity interaction response
-                response = self.llm_handler.generate_entity_interaction_response(
-                    entity_name, interaction_type, message, context
-                )
+            # Generate entity response using LLM handler
+            response = self.llm_handler.generate_entity_interaction_response(entity_name, interaction_type, message, context)
             
             # Format response with entity-specific styling
             entity_display_name = self._get_entity_display_name(entity_name)
@@ -1603,30 +1512,15 @@ class MainTerminalHandler:
         self.terminal_renderer.add_to_buffer(f"Initiating negotiation with {entity}...")
         self.terminal_renderer.add_to_buffer(f"Terms proposed: {terms}")
         
-        # Build context for negotiation
-        context = {
-            'role': getattr(self.file_system.game_state, 'role', 'arbiter') if hasattr(self.file_system, 'game_state') else 'arbiter',
-            'location': self.file_system.current_directory,
-            'corruption_level': getattr(self.file_system.game_state, 'corruption_level', 0.0) if hasattr(self.file_system, 'game_state') else 0.0,
-            'current_layer': getattr(self.world_manager, 'current_layer', 1) if self.world_manager else 1
-        }
+        # Simulate negotiation based on player's history and entity type
+        success_chance = random.uniform(0.3, 0.8)
         
-        # Use enhanced knowledge graph-aware response if available
-        if hasattr(self.llm_handler, 'knowledge_graph') and self.llm_handler.knowledge_graph:
-            response = self.llm_handler.generate_contextual_entity_response(
-                entity, 'negotiate', terms, context
-            )
-            self.terminal_renderer.add_to_buffer(f"[{self._get_entity_display_name(entity)}] {response}")
+        if random.random() < success_chance:
+            self.terminal_renderer.add_to_buffer(f"✓ {entity} accepts your terms.")
+            self.terminal_renderer.add_to_buffer("Negotiation successful. Information access granted.")
         else:
-            # Fallback to simple simulation
-            success_chance = random.uniform(0.3, 0.8)
-            
-            if random.random() < success_chance:
-                self.terminal_renderer.add_to_buffer(f"✓ {entity} accepts your terms.")
-                self.terminal_renderer.add_to_buffer("Negotiation successful. Information access granted.")
-            else:
-                self.terminal_renderer.add_to_buffer(f"✗ {entity} rejects your proposal.")
-                self.terminal_renderer.add_to_buffer("Counter-offer required or alternative approach needed.")
+            self.terminal_renderer.add_to_buffer(f"✗ {entity} rejects your proposal.")
+            self.terminal_renderer.add_to_buffer("Counter-offer required or alternative approach needed.")
             
         return True
     
@@ -1695,40 +1589,18 @@ class MainTerminalHandler:
         self.terminal_renderer.add_to_buffer(f"Attempting to absorb essence of {entity}...")
         self.terminal_renderer.add_to_buffer("Reality bends as knowledge flows...")
         
-        # Build context for absorption
-        context = {
-            'role': getattr(self.file_system.game_state, 'role', 'ascendant') if hasattr(self.file_system, 'game_state') else 'ascendant',
-            'location': self.file_system.current_directory,
-            'corruption_level': getattr(self.file_system.game_state, 'corruption_level', 0.0) if hasattr(self.file_system, 'game_state') else 0.0,
-            'current_layer': getattr(self.world_manager, 'current_layer', 1) if self.world_manager else 1
-        }
+        # Simulate absorption with corruption side effects
+        absorption_success = random.random() < 0.7
         
-        # Use enhanced knowledge graph-aware response if available
-        if hasattr(self.llm_handler, 'knowledge_graph') and self.llm_handler.knowledge_graph:
-            response = self.llm_handler.generate_contextual_entity_response(
-                entity, 'consume', f"attempting to absorb your essence", context
-            )
-            self.terminal_renderer.add_to_buffer(f"[{self._get_entity_display_name(entity)}] {response}")
+        if absorption_success:
+            self.terminal_renderer.add_to_buffer(f"✓ Absorption complete. {entity}'s knowledge is now yours.")
+            self.terminal_renderer.add_to_buffer("New capabilities unlocked...")
             
-            # Generate dynamic narrative event for the absorption attempt
-            narrative_event = self.llm_handler.generate_dynamic_narrative_event(
-                'absorption_attempt', context, {'target_entity': entity}
-            )
-            if narrative_event:
-                self.terminal_renderer.add_to_buffer(narrative_event)
+            # Increase corruption as side effect
+            self.effect_manager.increase_corruption(0.1)
         else:
-            # Fallback to simple simulation
-            absorption_success = random.random() < 0.7
-            
-            if absorption_success:
-                self.terminal_renderer.add_to_buffer(f"✓ Absorption complete. {entity}'s knowledge is now yours.")
-                self.terminal_renderer.add_to_buffer("New capabilities unlocked...")
-            else:
-                self.terminal_renderer.add_to_buffer(f"✗ Absorption failed. {entity} resists.")
-                self.terminal_renderer.add_to_buffer("The entity's essence slips away...")
-        
-        # Increase corruption as side effect
-        self.effect_manager.increase_corruption(0.1)
+            self.terminal_renderer.add_to_buffer(f"✗ Absorption failed. {entity} resists.")
+            self.terminal_renderer.add_to_buffer("The entity's essence slips away...")
             
         return True
     
@@ -1744,37 +1616,15 @@ class MainTerminalHandler:
         self.terminal_renderer.add_to_buffer(f"Manipulating {target}: {action}")
         self.terminal_renderer.add_to_buffer("Exerting influence through digital channels...")
         
-        # Build context for manipulation
-        context = {
-            'role': getattr(self.file_system.game_state, 'role', 'ascendant') if hasattr(self.file_system, 'game_state') else 'ascendant',
-            'location': self.file_system.current_directory,
-            'corruption_level': getattr(self.file_system.game_state, 'corruption_level', 0.0) if hasattr(self.file_system, 'game_state') else 0.0,
-            'current_layer': getattr(self.world_manager, 'current_layer', 1) if self.world_manager else 1
-        }
+        # Simulate manipulation with varying success
+        manipulation_power = random.uniform(0.4, 0.9)
         
-        # Use enhanced knowledge graph-aware response if available
-        if hasattr(self.llm_handler, 'knowledge_graph') and self.llm_handler.knowledge_graph:
-            response = self.llm_handler.generate_contextual_entity_response(
-                target, 'manipulate', action, context
-            )
-            self.terminal_renderer.add_to_buffer(f"[{self._get_entity_display_name(target)}] {response}")
-            
-            # Generate dynamic narrative event for the manipulation
-            narrative_event = self.llm_handler.generate_dynamic_narrative_event(
-                'manipulation_attempt', context, {'target': target, 'action': action}
-            )
-            if narrative_event:
-                self.terminal_renderer.add_to_buffer(narrative_event)
+        if manipulation_power > 0.6:
+            self.terminal_renderer.add_to_buffer(f"✓ Manipulation successful")
+            self.terminal_renderer.add_to_buffer(f"{target} responds to your influence")
         else:
-            # Fallback to simple simulation
-            manipulation_power = random.uniform(0.4, 0.9)
-            
-            if manipulation_power > 0.6:
-                self.terminal_renderer.add_to_buffer(f"✓ Manipulation successful")
-                self.terminal_renderer.add_to_buffer(f"{target} responds to your influence")
-            else:
-                self.terminal_renderer.add_to_buffer(f"⚠ Partial success")
-                self.terminal_renderer.add_to_buffer(f"{target} shows resistance")
+            self.terminal_renderer.add_to_buffer(f"⚠ Partial success")
+            self.terminal_renderer.add_to_buffer(f"{target} shows resistance")
             
         return True
 

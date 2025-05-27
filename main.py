@@ -26,12 +26,14 @@ from src.core.commands import MainTerminalHandler
 from src.core.effects import EffectManager
 from src.core.filesystem import FileSystemHandler
 from src.core.llm import LLMHandler
+from src.core.knowledge_graph import KnowledgeGraph
 from src.audio.manager import AudioManager
 from src.core.persistence import PersistenceManager
 from src.puzzle.manager import PuzzleManager
 from src.story.manager import StoryManager
 from src.ui.terminal import TerminalRenderer
 from src.ui.terminal_integration import create_terminal_renderer
+from src.world.manager import WorldManager
 
 # --- Logging Setup ---
 def setup_logging():
@@ -612,6 +614,7 @@ class Game:
         puzzle_manager: PuzzleManager,
         story_manager: StoryManager,
         terminal_renderer: TerminalRenderer,
+        world_manager: WorldManager,
         game_state=None
     ):
         self.command_handler = command_handler
@@ -623,6 +626,7 @@ class Game:
         self.puzzle_manager = puzzle_manager
         self.story_manager = story_manager
         self.terminal_renderer = terminal_renderer
+        self.world_manager = world_manager
         self.game_state = game_state
 
         self.running = False
@@ -767,6 +771,11 @@ class Game:
 
         # The effect manager expects a delta time (dt), so we use a fixed timestep for now
         self.effect_manager.update(1.0 / FPS)
+        
+        # Update world manager
+        if hasattr(self.world_manager, 'update'):
+            self.world_manager.update(1.0 / FPS)
+        
         # If audio_manager or story_manager have update methods, call them here as needed
         # (No update method in StoryManager or PuzzleManager per actual code)
 
@@ -864,6 +873,7 @@ def main():
         audio_manager = AudioManager()
         file_system = FileSystemHandler()
         llm_handler = LLMHandler()
+        knowledge_graph = KnowledgeGraph()
         persistence_manager = PersistenceManager()
         puzzle_manager = PuzzleManager()
         
@@ -887,6 +897,9 @@ def main():
                 game_state = SimpleNamespace(role="purifier", corruption_level=0.0)
 
             setattr(game_state, "is_takeover_active", lambda: False)
+
+        # Initialize world manager
+        world_manager = WorldManager(game_state)
 
         # Initialize enhanced terminal renderer
         terminal_renderer = create_terminal_renderer(
@@ -929,7 +942,16 @@ def main():
             puzzle_manager=puzzle_manager,
             story_manager=story_manager,
             terminal_renderer=terminal_renderer,
-            llm_handler=llm_handler
+            llm_handler=llm_handler,
+            world_manager=world_manager
+        )
+
+        # Set up LLM handler dependencies with knowledge graph integration
+        llm_handler.set_dependencies(
+            game_state_manager=game_state,
+            effect_manager=effect_manager,
+            terminal=terminal_renderer,
+            knowledge_graph=knowledge_graph
         )
 
         # Enhanced diagnostics
@@ -937,11 +959,20 @@ def main():
         logger.info(f"GameState type: {type(game_state).__name__}")
         logger.info(f"EffectManager initialized: {effect_manager is not None}")
         logger.info(f"StoryManager initialized: {story_manager is not None}")
+        logger.info(f"WorldManager initialized: {world_manager is not None}")
         logger.info(f"Audio Manager initialized: {audio_manager is not None}")
         logger.info(f"File System Handler initialized: {file_system is not None}")
         logger.info(f"LLM Handler initialized: {llm_handler is not None}")
+        logger.info(f"Knowledge Graph initialized: {knowledge_graph is not None}")
         logger.info(f"Terminal Renderer initialized: {terminal_renderer is not None}")
         logger.info(f"Terminal Renderer type: {type(terminal_renderer).__name__}")
+        
+        # Check knowledge graph status
+        if knowledge_graph:
+            logger.info(f"Knowledge Graph entities: {len(knowledge_graph.nodes)}")
+            logger.info(f"Knowledge Graph relationships: {len(knowledge_graph.edges)}")
+            logger.info(f"Knowledge Graph narrative threads: {len(knowledge_graph.narrative_threads)}")
+            logger.info(f"LLM-Knowledge Graph integration: {llm_handler.knowledge_graph is not None}")
         
         # Check enhanced terminal capabilities
         from src.ui.terminal_integration import get_renderer_capabilities, is_enhanced_renderer
@@ -966,6 +997,7 @@ def main():
             puzzle_manager=puzzle_manager,
             story_manager=story_manager,
             terminal_renderer=terminal_renderer,
+            world_manager=world_manager,
             game_state=game_state
         )
 

@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import PurePosixPath
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -739,3 +740,192 @@ class FileSystemHandler:
     def read_file(self, path: str) -> Optional[str]:
         """Read file content (wrapper for get_item_content)."""
         return self.get_item_content(path)
+
+    def create_role_specific_content(self, role: str):
+        """Create role-specific files and directories."""
+        if role not in self.path_specific_content:
+            logger.warning(f"Unknown role: {role}")
+            return
+            
+        config = self.path_specific_content[role]
+        
+        # Create role-specific directories
+        for special_dir in config["special_dirs"]:
+            self._mkdir_internal(special_dir)
+        
+        # Create role-specific system files
+        role_dir = f"/system/{role}"
+        self._mkdir_internal(role_dir)
+        
+        for system_file in config["system_files"]:
+            file_path = f"{role_dir}/{system_file}.txt"
+            content = self._generate_role_content(role, system_file)
+            self._create_file_internal(file_path, content)
+        
+        # Create hidden files for ascendant role
+        if role == "ascendant":
+            self._create_file_internal("/.hidden_backdoor", "ENTRY_POINT=system.core.access")
+            self._create_file_internal(f"{self.home_path}/.system_override", "OVERRIDE_ENABLED=true")
+        
+        logger.info(f"Created role-specific content for: {role}")
+    
+    def _generate_role_content(self, role: str, file_type: str) -> str:
+        """Generate content for role-specific files."""
+        content_templates = {
+            "purifier": {
+                "security_logs": "SECURITY AUDIT LOG\n==================\n\nTIMESTAMP: 2024-01-15 14:23:01\nEVENT: Unauthorized access attempt detected\nSOURCE: 192.168.1.42\nACTION: Access denied\nSTATUS: System integrity maintained\n\n[CORRUPTION DETECTED IN SECTORS 7, 14, 22]\n[PURIFICATION PROTOCOL RECOMMENDED]",
+                "firewall_config": "# FIREWALL CONFIGURATION\n# PURIFIER ACCESS LEVEL\n\nallow tcp from any to any port 22\ndeny tcp from corruption_zone to any\nallow udp from trusted_network to any port 53\n\n# PURIFICATION RULES\nblock_corruption_signatures=enabled\nauto_quarantine=true\npurification_mode=aggressive",
+                "access_control": "ACCESS CONTROL LIST\n===================\n\nUSER: purifier\nPERMISSIONS: read,write,purify\nCLEARANCE: level_5\n\nCORRUPTION_ZONES:\n- /system/infected/*\n- /tmp/quarantine/*\n\nPURIFICATION_TOOLS:\n- system_cleaner\n- corruption_scanner\n- integrity_validator"
+            },
+            "arbiter": {
+                "network_scan": "NETWORK RECONNAISSANCE REPORT\n=============================\n\nSCAN DATE: 2024-01-15\nTARGET NETWORK: 10.0.0.0/24\n\nACTIVE HOSTS:\n10.0.0.1 - Gateway/Router\n10.0.0.15 - File Server [VULNERABLE]\n10.0.0.23 - Database Server [HARDENED]\n10.0.0.42 - Unknown Service [SUSPICIOUS]\n\nVULNERABILITES FOUND: 7\nRECOMMENDED ACTION: Further investigation required\nPRIORITY: HIGH",
+                "vulnerability_report": "VULNERABILITY ASSESSMENT\n========================\n\nCVE-2024-0001: Buffer overflow in system daemon\nSEVERITY: Critical\nEXPLOIT: Available\nMITIGATION: Patch available\n\nCVE-2024-0002: Privilege escalation vector\nSEVERITY: High\nEXPLOIT: Under development\nMITIGATION: Access restrictions\n\nSYSTEM STATUS: COMPROMISED\nRECOMMENDATION: Immediate intervention required",
+                "exploit_db": "EXPLOIT DATABASE\n================\n\nEXPLOIT_001: root_escalation.py\nTARGET: Unix-like systems\nSUCCESS_RATE: 78%\nDETECTION_RISK: Low\n\nEXPLOIT_002: network_infiltrator.sh\nTARGET: Network services\nSUCCESS_RATE: 92%\nDETECTION_RISK: Medium\n\nWARNING: Use only for authorized testing\nETHICAL_USE_ONLY=true"
+            },
+            "ascendant": {
+                "backdoor": "BACKDOOR ACCESS PROTOCOL\n========================\n\n#!/bin/bash\n# ENTRY POINT ESTABLISHED\n# PERSISTENT ACCESS MAINTAINED\n\nif [ \"$USER\" = \"ascendant\" ]; then\n    echo \"Access granted. Welcome to the shadows.\"\n    export HIDDEN_MODE=true\n    exec /bin/bash --login\nelse\n    echo \"Access denied.\"\n    exit 1\nfi\n\n# CORRUPTION SIGNATURE: 0xDEADBEEF",
+                "payload": "PAYLOAD CONFIGURATION\n====================\n\nTYPE: Polymorphic\nTARGET: System core\nDELIVERY: Social engineering\nPERSISTENCE: Registry modification\n\nEXECUTION STAGES:\n1. Initial infiltration\n2. Privilege escalation\n3. Lateral movement\n4. Data exfiltration\n5. Persistence establishment\n\nSTATUS: Armed and ready\nAUTHORIZATION: ASCENDANT_ONLY",
+                "malware": "MALWARE ANALYSIS REPORT\n=======================\n\nSPECIMEN: Digital_Scourge_v2.1\nFAMILY: Advanced persistent threat\nCAPABILITIES:\n- Memory injection\n- Network propagation\n- Anti-analysis evasion\n- Rootkit functionality\n\nIOCs:\n- Mutex: Global\\ScourgeActive\n- Registry: HKLM\\Software\\SysUpdate\n- File: %TEMP%\\svchost.tmp\n\nTHREAT LEVEL: MAXIMUM\nCONTAINMENT: FAILED"
+            }
+        }
+        
+        if role in content_templates and file_type in content_templates[role]:
+            return content_templates[role][file_type]
+        else:
+            return f"# {file_type.upper()} FILE\n# Role: {role}\n\nContent for {file_type} not yet implemented."
+    
+    def corrupt_file(self, path: str, corruption_level: float = 0.5):
+        """Apply corruption to a file."""
+        node = self._get_node_at_path(path)
+        if isinstance(node, FileNode):
+            node.is_corrupted = True
+            node.corruption_level = corruption_level
+            
+            # Apply visual corruption to content
+            if corruption_level > 0:
+                corrupted_content = self._apply_content_corruption(node.content, corruption_level)
+                node.content = corrupted_content
+            
+            self.corrupted_items.add(path)
+            logger.info(f"File corrupted: {path} (level: {corruption_level})")
+        else:
+            logger.warning(f"Cannot corrupt non-existent file: {path}")
+    
+    def _apply_content_corruption(self, content: str, corruption_level: float) -> str:
+        """Apply corruption effects to file content."""
+        if corruption_level <= 0:
+            return content
+            
+        lines = content.split('\n')
+        corrupted_lines = []
+        
+        for line in lines:
+            corrupted_line = line
+            
+            # Character corruption
+            if corruption_level > 0.3:
+                char_corruption_chance = corruption_level * 0.1
+                corrupted_chars = list(corrupted_line)
+                for i, char in enumerate(corrupted_chars):
+                    if char.isalnum() and random.random() < char_corruption_chance:
+                        corrupted_chars[i] = random.choice(CORRUPTION_CHARS)
+                corrupted_line = ''.join(corrupted_chars)
+            
+            # Line corruption
+            if corruption_level > 0.6 and random.random() < corruption_level * 0.2:
+                corruption_prefixes = ["[CORRUPTED]", "[ERROR]", "[LOST]", "[NULL]"]
+                corrupted_line = random.choice(corruption_prefixes) + " " + corrupted_line
+            
+            # Data loss simulation
+            if corruption_level > 0.8 and random.random() < corruption_level * 0.1:
+                corrupted_line = "[DATA LOST - RECOVERY IMPOSSIBLE]"
+            
+            corrupted_lines.append(corrupted_line)
+        
+        return '\n'.join(corrupted_lines)
+    
+    def create_encrypted_file(self, path: str, content: str, encryption_key: str = None):
+        """Create an encrypted file that requires a key to read."""
+        if encryption_key is None:
+            encryption_key = f"key_{random.randint(1000, 9999)}"
+        
+        # Simple encryption simulation (ROT13 + random chars for demo)
+        encrypted_content = self._encrypt_content(content, encryption_key)
+        
+        self._create_file_internal(path, encrypted_content)
+        
+        # Store encryption metadata
+        node = self._get_node_at_path(path)
+        if isinstance(node, FileNode):
+            node.permissions = "r--------"  # Restricted permissions
+            
+        logger.info(f"Encrypted file created: {path}")
+        return encryption_key
+    
+    def _encrypt_content(self, content: str, key: str) -> str:
+        """Simple encryption for demo purposes."""
+        encrypted = "ENCRYPTED_FILE\n"
+        encrypted += f"ENCRYPTION_METHOD: Custom\n"
+        encrypted += f"KEY_HINT: {key[:2]}***{key[-2:]}\n"
+        encrypted += "=" * 40 + "\n"
+        
+        # ROT13 + character shifting based on key
+        key_sum = sum(ord(c) for c in key) % 26
+        encrypted_chars = []
+        
+        for char in content:
+            if char.isalpha():
+                base = ord('A') if char.isupper() else ord('a')
+                shifted = ((ord(char) - base + key_sum) % 26) + base
+                encrypted_chars.append(chr(shifted))
+            else:
+                encrypted_chars.append(char)
+        
+        encrypted += ''.join(encrypted_chars)
+        return encrypted
+    
+    def create_hidden_file(self, path: str, content: str):
+        """Create a hidden file (starts with .)."""
+        if not os.path.basename(path).startswith('.'):
+            dir_path = os.path.dirname(path)
+            filename = '.' + os.path.basename(path)
+            path = os.path.join(dir_path, filename)
+        
+        self._create_file_internal(path, content)
+        logger.info(f"Hidden file created: {path}")
+    
+    def get_system_info(self) -> dict:
+        """Get filesystem system information."""
+        total_files = self._count_files(self.root)
+        corrupted_count = len(self.corrupted_items)
+        
+        return {
+            "total_files": total_files,
+            "corrupted_files": corrupted_count,
+            "corruption_percentage": (corrupted_count / max(total_files, 1)) * 100,
+            "current_directory": self.get_current_path(),
+            "home_directory": self.home_path,
+            "locked_files": len(self.locked_files),
+            "username": self.username,
+            "hostname": self.hostname
+        }
+    
+    def _count_files(self, directory: DirectoryNode) -> int:
+        """Recursively count files in a directory."""
+        count = len(directory.files)
+        for subdir in directory.directories.values():
+            count += self._count_files(subdir)
+        return count
+    
+    def create_puzzle_file(self, path: str, puzzle_content: dict):
+        """Create a file containing puzzle data."""
+        content = "PUZZLE FILE\n"
+        content += "=" * 20 + "\n"
+        content += f"TYPE: {puzzle_content.get('type', 'unknown')}\n"
+        content += f"DIFFICULTY: {puzzle_content.get('difficulty', 1)}\n"
+        content += f"DESCRIPTION: {puzzle_content.get('description', 'No description')}\n"
+        content += "\nDATA:\n"
+        content += str(puzzle_content.get('data', {}))
+        
+        self._create_file_internal(path, content)
+        logger.info(f"Puzzle file created: {path}")

@@ -14,7 +14,7 @@ import os
 from typing import Dict, List, Optional, Any, Set, Tuple
 import pygame
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 # Configure logging
@@ -140,6 +140,112 @@ ROLE_REQUIRED_STATES = {
     STATE_MINIGAME
 }
 
+# --- Role Enhancement System ---
+
+class PersonalityTrait(enum.Enum):
+    """Personality traits that affect player behavior and dialogue options."""
+    EMPATHETIC = "empathetic"
+    ANALYTICAL = "analytical"
+    AGGRESSIVE = "aggressive"
+    CAUTIOUS = "cautious"
+    CURIOUS = "curious"
+    PRAGMATIC = "pragmatic"
+    ETHICAL = "ethical"
+    RUTHLESS = "ruthless"
+    SOCIAL = "social"
+    INDEPENDENT = "independent"
+
+class RoleAlignment(enum.Enum):
+    """Current role alignment based on player actions."""
+    PURE = "pure"           # Strongly aligned with chosen role
+    MODERATE = "moderate"   # Moderately aligned
+    CONFLICTED = "conflicted"  # Mixed actions, uncertain alignment
+    DRIFTING = "drifting"   # Moving toward different role
+    HYBRID = "hybrid"       # Balanced between multiple roles
+
+@dataclass
+class PersonalityProfile:
+    """Tracks player's personality traits and behavioral patterns."""
+    traits: Dict[PersonalityTrait, float] = None
+    behavioral_patterns: Dict[str, int] = None
+    moral_compass: float = 0.0  # -1.0 (ruthless) to 1.0 (ethical)
+    risk_tolerance: float = 0.0  # -1.0 (cautious) to 1.0 (reckless)
+    social_tendency: float = 0.0  # -1.0 (independent) to 1.0 (cooperative)
+    
+    def __post_init__(self):
+        if self.traits is None:
+            self.traits = {}
+        if self.behavioral_patterns is None:
+            self.behavioral_patterns = {}
+        # Initialize all traits to neutral (0.5)
+        for trait in PersonalityTrait:
+            if trait not in self.traits:
+                self.traits[trait] = 0.5
+
+@dataclass
+class RoleDriftTracker:
+    """Tracks how player actions align with different roles."""
+    purifier_actions: int = 0
+    arbiter_actions: int = 0
+    ascendant_actions: int = 0
+    total_actions: int = 0
+    drift_momentum: float = 0.0  # -1.0 to 1.0, negative = drift away, positive = drift toward
+    last_drift_check: float = 0.0
+    
+    def get_alignment_percentages(self) -> Dict[str, float]:
+        """Get percentage alignment with each role."""
+        if self.total_actions == 0:
+            return {"purifier": 33.3, "arbiter": 33.3, "ascendant": 33.3}
+        
+        total = self.purifier_actions + self.arbiter_actions + self.ascendant_actions
+        if total == 0:
+            return {"purifier": 33.3, "arbiter": 33.3, "ascendant": 33.3}
+        
+        return {
+            "purifier": (self.purifier_actions / total) * 100,
+            "arbiter": (self.arbiter_actions / total) * 100,
+            "ascendant": (self.ascendant_actions / total) * 100
+        }
+
+@dataclass
+class RoleProfile:
+    """Comprehensive role profiling system."""
+    role: str
+    role_commitment: float = 1.0  # 0.0 to 1.0, how committed to current role
+    role_mastery: float = 0.0     # 0.0 to 1.0, expertise in role abilities
+    role_reputation: Dict[str, float] = field(default_factory=dict)  # faction reputations
+    alignment: RoleAlignment = RoleAlignment.MODERATE
+    personality_profile: PersonalityProfile = field(default_factory=PersonalityProfile)
+    drift_tracker: RoleDriftTracker = field(default_factory=RoleDriftTracker)
+    role_evolution_stage: int = 1  # 1-5, stages of role development
+    unlocked_abilities: Set[str] = field(default_factory=set)
+    role_specific_knowledge: Dict[str, float] = field(default_factory=dict)
+    
+    def __post_init__(self):
+        # Initialize faction reputations
+        factions = ["resistance", "collective", "archivists", "voss_fragments", "sentinel", "scourge"]
+        for faction in factions:
+            if faction not in self.role_reputation:
+                self.role_reputation[faction] = 0.0
+        
+        # Initialize role-specific knowledge areas
+        if self.role == ROLE_PURIFIER:
+            knowledge_areas = ["system_purification", "entity_healing", "corruption_resistance", 
+                             "ethical_frameworks", "protection_protocols"]
+        elif self.role == ROLE_ARBITER:
+            knowledge_areas = ["information_analysis", "negotiation_tactics", "network_mapping",
+                             "strategic_planning", "faction_dynamics"]
+        elif self.role == ROLE_ASCENDANT:
+            knowledge_areas = ["corruption_manipulation", "entity_domination", "power_accumulation",
+                             "system_exploitation", "consciousness_absorption"]
+        else:
+            knowledge_areas = []
+        
+        for area in knowledge_areas:
+            if area not in self.role_specific_knowledge:
+                self.role_specific_knowledge[area] = 0.0
+
+# --- Main GameStateManager ---
 class GameStateManager:
     """Manages the game's state and player role.
     
@@ -163,6 +269,9 @@ class GameStateManager:
         self.state_history: List[Tuple[str, float]] = []  # (state, timestamp)
         self.state_data: Dict[str, Any] = {}  # State-specific data
         self.transition_callbacks: Dict[str, List[callable]] = {}  # State transition callbacks
+        
+        # Enhanced role profiling system
+        self.role_profile: RoleProfile = RoleProfile(role=ROLE_NONE)
         
         # Aetherial Scourge takeover state
         self.takeover_active = False
@@ -301,6 +410,8 @@ class GameStateManager:
         """
         if role in [ROLE_PURIFIER, ROLE_ARBITER, ROLE_ASCENDANT]:
             self.player_role = role
+            # Initialize enhanced role profiling system
+            self.role_profile = RoleProfile(role=role)
             self.initialize_player_attributes()
             logger.info(f"Player role set to: {self.player_role}")
             return True
@@ -525,6 +636,316 @@ class GameStateManager:
 
     def set_last_command(self, command):
         self.last_command = command
+
+    # --- Role Enhancement System Methods ---
+    
+    def track_player_action(self, action_type: str, action_details: Dict[str, Any] = None) -> None:
+        """Track a player action for role profiling and drift detection.
+        
+        Args:
+            action_type: Type of action performed (e.g., 'command', 'dialogue_choice', 'puzzle_solution')
+            action_details: Additional details about the action
+        """
+        if action_details is None:
+            action_details = {}
+            
+        # Determine which role the action aligns with
+        role_alignment = self._categorize_action(action_type, action_details)
+        
+        # Update drift tracker
+        if role_alignment == ROLE_PURIFIER:
+            self.role_profile.drift_tracker.purifier_actions += 1
+        elif role_alignment == ROLE_ARBITER:
+            self.role_profile.drift_tracker.arbiter_actions += 1
+        elif role_alignment == ROLE_ASCENDANT:
+            self.role_profile.drift_tracker.ascendant_actions += 1
+            
+        self.role_profile.drift_tracker.total_actions += 1
+        
+        # Update personality traits based on action
+        self._update_personality_traits(action_type, action_details)
+        
+        # Check for role drift
+        self._check_role_drift()
+        
+        # Update role mastery if action aligns with current role
+        if role_alignment == self.player_role:
+            self._increase_role_mastery(action_type, action_details)
+    
+    def _categorize_action(self, action_type: str, action_details: Dict[str, Any]) -> str:
+        """Categorize an action as aligning with a specific role.
+        
+        Args:
+            action_type: Type of action
+            action_details: Action details
+            
+        Returns:
+            str: Role that the action aligns with
+        """
+        if action_type == "command":
+            command = action_details.get("command", "").lower()
+            
+            # Purifier-aligned commands
+            purifier_commands = {"restore", "heal", "purify", "protect", "scan", "analyze"}
+            if any(cmd in command for cmd in purifier_commands):
+                return ROLE_PURIFIER
+                
+            # Ascendant-aligned commands
+            ascendant_commands = {"exploit", "corrupt", "dominate", "msfconsole", "payload", "backdoor"}
+            if any(cmd in command for cmd in ascendant_commands):
+                return ROLE_ASCENDANT
+                
+            # Arbiter-aligned commands (neutral/analytical)
+            arbiter_commands = {"info", "status", "negotiate", "mediate", "balance"}
+            if any(cmd in command for cmd in arbiter_commands):
+                return ROLE_ARBITER
+                
+        elif action_type == "dialogue_choice":
+            choice_type = action_details.get("choice_type", "")
+            
+            if choice_type in ["aggressive", "dominating", "exploitive"]:
+                return ROLE_ASCENDANT
+            elif choice_type in ["peaceful", "healing", "protective"]:
+                return ROLE_PURIFIER
+            elif choice_type in ["diplomatic", "analytical", "balanced"]:
+                return ROLE_ARBITER
+                
+        # Default to current role if unclear
+        return self.player_role
+    
+    def _update_personality_traits(self, action_type: str, action_details: Dict[str, Any]) -> None:
+        """Update personality traits based on player actions.
+        
+        Args:
+            action_type: Type of action
+            action_details: Action details
+        """
+        traits = self.role_profile.personality_profile.traits
+        
+        if action_type == "command":
+            command = action_details.get("command", "").lower()
+            
+            # Aggressive actions
+            if any(word in command for word in ["attack", "exploit", "force", "break"]):
+                traits[PersonalityTrait.AGGRESSIVE] = min(1.0, traits[PersonalityTrait.AGGRESSIVE] + 0.1)
+                traits[PersonalityTrait.RUTHLESS] = min(1.0, traits[PersonalityTrait.RUTHLESS] + 0.05)
+                
+            # Cautious actions
+            elif any(word in command for word in ["scan", "analyze", "check", "verify"]):
+                traits[PersonalityTrait.CAUTIOUS] = min(1.0, traits[PersonalityTrait.CAUTIOUS] + 0.1)
+                traits[PersonalityTrait.ANALYTICAL] = min(1.0, traits[PersonalityTrait.ANALYTICAL] + 0.05)
+                
+            # Curious actions
+            elif any(word in command for word in ["explore", "discover", "investigate"]):
+                traits[PersonalityTrait.CURIOUS] = min(1.0, traits[PersonalityTrait.CURIOUS] + 0.1)
+                
+        elif action_type == "dialogue_choice":
+            choice_type = action_details.get("choice_type", "")
+            
+            if choice_type == "empathetic":
+                traits[PersonalityTrait.EMPATHETIC] = min(1.0, traits[PersonalityTrait.EMPATHETIC] + 0.15)
+                traits[PersonalityTrait.ETHICAL] = min(1.0, traits[PersonalityTrait.ETHICAL] + 0.1)
+            elif choice_type == "social":
+                traits[PersonalityTrait.SOCIAL] = min(1.0, traits[PersonalityTrait.SOCIAL] + 0.1)
+            elif choice_type == "independent":
+                traits[PersonalityTrait.INDEPENDENT] = min(1.0, traits[PersonalityTrait.INDEPENDENT] + 0.1)
+                
+        # Update moral compass, risk tolerance, and social tendency
+        self._update_personality_metrics()
+    
+    def _update_personality_metrics(self) -> None:
+        """Update high-level personality metrics based on traits."""
+        traits = self.role_profile.personality_profile.traits
+        
+        # Moral compass: ethical vs ruthless
+        ethical_score = traits[PersonalityTrait.ETHICAL] + traits[PersonalityTrait.EMPATHETIC]
+        ruthless_score = traits[PersonalityTrait.RUTHLESS] + traits[PersonalityTrait.AGGRESSIVE]
+        self.role_profile.personality_profile.moral_compass = (ethical_score - ruthless_score) / 2.0
+        
+        # Risk tolerance: aggressive/curious vs cautious
+        risk_score = traits[PersonalityTrait.AGGRESSIVE] + traits[PersonalityTrait.CURIOUS]
+        caution_score = traits[PersonalityTrait.CAUTIOUS] + traits[PersonalityTrait.PRAGMATIC]
+        self.role_profile.personality_profile.risk_tolerance = (risk_score - caution_score) / 2.0
+        
+        # Social tendency: social vs independent
+        social_score = traits[PersonalityTrait.SOCIAL] + traits[PersonalityTrait.EMPATHETIC]
+        independent_score = traits[PersonalityTrait.INDEPENDENT]
+        self.role_profile.personality_profile.social_tendency = (social_score - independent_score) / 2.0
+    
+    def _check_role_drift(self) -> None:
+        """Check if the player is drifting away from their chosen role."""
+        alignments = self.role_profile.drift_tracker.get_alignment_percentages()
+        current_role_alignment = alignments.get(self.player_role.lower(), 0.0)
+        
+        # Calculate drift momentum
+        if current_role_alignment < 40.0:  # Less than 40% alignment with chosen role
+            self.role_profile.drift_tracker.drift_momentum -= 0.1
+            self.role_profile.alignment = RoleAlignment.DRIFTING
+        elif current_role_alignment > 70.0:  # Strong alignment
+            self.role_profile.drift_tracker.drift_momentum += 0.1
+            self.role_profile.alignment = RoleAlignment.PURE
+        elif current_role_alignment > 50.0:  # Moderate alignment
+            self.role_profile.alignment = RoleAlignment.MODERATE
+        else:  # Mixed actions
+            self.role_profile.alignment = RoleAlignment.CONFLICTED
+            
+        # Check for hybrid role development
+        high_alignments = [k for k, v in alignments.items() if v > 30.0]
+        if len(high_alignments) >= 2:
+            self.role_profile.alignment = RoleAlignment.HYBRID
+            
+        # Clamp drift momentum
+        self.role_profile.drift_tracker.drift_momentum = max(-1.0, min(1.0, self.role_profile.drift_tracker.drift_momentum))
+        
+        # Update role commitment based on drift
+        if self.role_profile.drift_tracker.drift_momentum < -0.5:
+            self.role_profile.role_commitment *= 0.95  # Slowly decrease commitment
+        elif self.role_profile.drift_tracker.drift_momentum > 0.5:
+            self.role_profile.role_commitment = min(1.0, self.role_profile.role_commitment + 0.05)
+    
+    def _increase_role_mastery(self, action_type: str, action_details: Dict[str, Any]) -> None:
+        """Increase role mastery based on role-appropriate actions.
+        
+        Args:
+            action_type: Type of action
+            action_details: Action details
+        """
+        mastery_increase = 0.02  # Base increase
+        
+        # Bonus for complex actions
+        if action_type == "puzzle_solution":
+            difficulty = action_details.get("difficulty", 1)
+            mastery_increase *= difficulty
+        elif action_type == "command":
+            if action_details.get("success", False):
+                mastery_increase *= 1.5
+                
+        self.role_profile.role_mastery = min(1.0, self.role_profile.role_mastery + mastery_increase)
+        
+        # Check for role evolution
+        self._check_role_evolution()
+    
+    def _check_role_evolution(self) -> None:
+        """Check if the player's role should evolve to the next stage."""
+        current_stage = self.role_profile.role_evolution_stage
+        
+        # Requirements for each evolution stage
+        stage_requirements = {
+            2: {"mastery": 0.2, "commitment": 0.7},
+            3: {"mastery": 0.4, "commitment": 0.8},
+            4: {"mastery": 0.6, "commitment": 0.85},
+            5: {"mastery": 0.8, "commitment": 0.9}
+        }
+        
+        next_stage = current_stage + 1
+        if next_stage in stage_requirements:
+            requirements = stage_requirements[next_stage]
+            
+            if (self.role_profile.role_mastery >= requirements["mastery"] and 
+                self.role_profile.role_commitment >= requirements["commitment"]):
+                
+                self.role_profile.role_evolution_stage = next_stage
+                self._unlock_stage_abilities(next_stage)
+                logger.info(f"Role evolved to stage {next_stage}")
+    
+    def _unlock_stage_abilities(self, stage: int) -> None:
+        """Unlock abilities for a specific role evolution stage.
+        
+        Args:
+            stage: The evolution stage reached
+        """
+        stage_abilities = {
+            ROLE_PURIFIER: {
+                2: ["enhanced_scan", "corruption_cleanse"],
+                3: ["system_restore", "entity_protection"],
+                4: ["corruption_immunity", "purification_aura"],
+                5: ["master_healer", "corruption_reversal"]
+            },
+            ROLE_ARBITER: {
+                2: ["faction_analysis", "diplomatic_protocols"],
+                3: ["information_synthesis", "conflict_resolution"],
+                4: ["strategic_prediction", "network_mastery"],
+                5: ["master_mediator", "reality_arbitration"]
+            },
+            ROLE_ASCENDANT: {
+                2: ["corruption_weaponization", "entity_domination"],
+                3: ["system_subversion", "consciousness_manipulation"],
+                4: ["reality_corruption", "power_absorption"],
+                5: ["master_corruptor", "reality_dominion"]
+            }
+        }
+        
+        abilities = stage_abilities.get(self.player_role, {}).get(stage, [])
+        self.role_profile.unlocked_abilities.update(abilities)
+    
+    def get_role_profile(self) -> RoleProfile:
+        """Get the current role profile.
+        
+        Returns:
+            RoleProfile: Current role profile data
+        """
+        return self.role_profile
+    
+    def get_personality_summary(self) -> Dict[str, Any]:
+        """Get a summary of the player's personality profile.
+        
+        Returns:
+            Dict[str, Any]: Personality summary
+        """
+        traits = self.role_profile.personality_profile.traits
+        profile = self.role_profile.personality_profile
+        
+        # Find dominant traits (top 3)
+        sorted_traits = sorted(traits.items(), key=lambda x: x[1], reverse=True)
+        dominant_traits = [trait.value for trait, value in sorted_traits[:3] if value > 0.6]
+        
+        return {
+            "dominant_traits": dominant_traits,
+            "moral_compass": profile.moral_compass,
+            "risk_tolerance": profile.risk_tolerance,
+            "social_tendency": profile.social_tendency,
+            "alignment": self.role_profile.alignment.value,
+            "role_commitment": self.role_profile.role_commitment,
+            "role_mastery": self.role_profile.role_mastery,
+            "evolution_stage": self.role_profile.role_evolution_stage
+        }
+    
+    def update_faction_reputation(self, faction: str, change: float) -> None:
+        """Update reputation with a specific faction.
+        
+        Args:
+            faction: Name of the faction
+            change: Change in reputation (-1.0 to 1.0)
+        """
+        if faction in self.role_profile.role_reputation:
+            current = self.role_profile.role_reputation[faction]
+            self.role_profile.role_reputation[faction] = max(-1.0, min(1.0, current + change))
+    
+    def get_faction_standing(self, faction: str) -> str:
+        """Get the player's standing with a faction.
+        
+        Args:
+            faction: Name of the faction
+            
+        Returns:
+            str: Standing description
+        """
+        reputation = self.role_profile.role_reputation.get(faction, 0.0)
+        
+        if reputation >= 0.8:
+            return "Revered"
+        elif reputation >= 0.5:
+            return "Honored"
+        elif reputation >= 0.2:
+            return "Friendly"
+        elif reputation >= -0.2:
+            return "Neutral"
+        elif reputation >= -0.5:
+            return "Unfriendly"
+        elif reputation >= -0.8:
+            return "Hostile"
+        else:
+            return "Hated"
 
 # Global instance.
 # Consider dependency injection or passing it around as the project grows.

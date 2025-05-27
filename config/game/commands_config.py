@@ -10,7 +10,8 @@ COMMAND_ACCESS = {
         "allowed_main": [
             "help", "clear", "ls", "cd", "pwd", "cat", "grep", "scan", "parse",
             "restore", "status", "processes", "kill", "quit", "exit", "theme", "type", "burst", "sequence", "corrupt", "flicker", "colorchange", "overlay", "jiggle", "screenres", "fullscreen", "windowed", "whoami", "hostname", "uname", "head", "tail", "mkdir", "touch", "echo",
-            "convince", "empathize", "ally", "rusty"
+            "convince", "empathize", "ally", "rusty",
+            "layer_info", "explore", "navigate", "scan_layer", "layer_transition", "world_status", "location_actions", "traverse"
         ],
         "allowed_msf": ["help", "clear", "search", "use", "info", "show", "set", "back", "exit", "sessions"],
         "allowed_puzzle": ["help", "solve", "hint", "exit_puzzle", "theme", "quit", "exit"],
@@ -53,7 +54,15 @@ COMMAND_ACCESS = {
             "convince": "  convince <entity> <message> - Attempt to convince an entity through reasoning",
             "empathize": "  empathize <entity> <message> - Connect with an entity through shared understanding",
             "ally": "  ally <entity> <message> - Offer cooperation to an entity",
-            "rusty": "  rusty <message>   - Interact with the Rusty assistant"
+            "rusty": "  rusty <message>   - Interact with the Rusty assistant",
+            "layer_info": "  layer_info        - Display information about the current network layer",
+            "explore": "  explore [type]    - Explore current location for hidden content (general|thorough|focused)",
+            "navigate": "  navigate <loc>    - Navigate to a specific location",
+            "scan_layer": "  scan_layer        - Scan current layer for accessible locations",
+            "layer_transition": "  layer_transition <layer> - Transition between network layers",
+            "world_status": "  world_status      - Display exploration progress and world state",
+            "location_actions": "  location_actions  - Show available actions at current location",
+            "traverse": "  traverse [loc]    - Navigate between connected locations"
         },
         "help_text_puzzle": {
             "help": "  help              - Show puzzle mode help",
@@ -81,7 +90,8 @@ COMMAND_ACCESS = {
         "allowed_main": [
             "help", "clear", "ls", "cd", "pwd", "cat", "grep", "scan", "parse",
             "restore", "status", "processes", "kill", "quit", "exit", "theme", "type", "burst", "sequence", "corrupt", "flicker", "colorchange", "overlay", "jiggle", "screenres", "fullscreen", "windowed", "whoami", "hostname", "uname", "head", "tail", "mkdir", "touch", "echo", "rm", "mv", "msfconsole",
-            "convince", "empathize", "pressure", "deceive", "ally", "rusty"
+            "convince", "empathize", "pressure", "deceive", "ally", "rusty",
+            "layer_info", "explore", "navigate", "scan_layer", "layer_transition", "world_status", "location_actions", "traverse"
         ],
         "allowed_msf": ["help", "clear", "search", "use", "info", "show", "set", "run", "exploit", "back", "exit", "sessions"],
         "allowed_puzzle": ["help", "solve", "hint", "exit_puzzle", "theme", "quit", "exit"],
@@ -136,7 +146,15 @@ COMMAND_ACCESS = {
             "pressure": "  pressure <entity> <message> - Apply strategic pressure to an entity",
             "deceive": "  deceive <entity> <message> - Attempt to mislead an entity for strategic advantage",
             "ally": "  ally <entity> <message> - Offer cooperation to an entity",
-            "rusty": "  rusty <message>   - Interact with the Rusty assistant"
+            "rusty": "  rusty <message>   - Interact with the Rusty assistant",
+            "layer_info": "  layer_info        - Display information about the current network layer",
+            "explore": "  explore [type]    - Explore current location for hidden content (general|thorough|focused)",
+            "navigate": "  navigate <loc>    - Navigate to a specific location",
+            "scan_layer": "  scan_layer        - Scan current layer for accessible locations",
+            "layer_transition": "  layer_transition <layer> - Transition between network layers",
+            "world_status": "  world_status      - Display exploration progress and world state",
+            "location_actions": "  location_actions  - Show available actions at current location",
+            "traverse": "  traverse [loc]    - Navigate between connected locations"
         },
         "help_text_puzzle": {
             "solve": "  solve <answer>    - Attempt to solve the active puzzle",
@@ -166,7 +184,8 @@ COMMAND_ACCESS = {
         "allowed_main": [
             "help", "clear", "ls", "cd", "pwd", "cat", "grep", "scan", "parse",
             "restore", "status", "processes", "kill", "quit", "exit", "theme", "type", "burst", "sequence", "corrupt", "flicker", "colorchange", "overlay", "jiggle", "screenres", "fullscreen", "windowed", "whoami", "hostname", "uname", "head", "tail", "mkdir", "touch", "echo", "rm", "mv",
-            "threaten", "fragment", "enslave", "consume", "rusty"
+            "threaten", "fragment", "enslave", "consume", "rusty",
+            "layer_info", "explore", "navigate", "scan_layer", "layer_transition", "world_status", "location_actions", "traverse"
         ],
         "allowed_msf": ["help", "clear", "search", "use", "info", "show", "set", "run", "exploit", "back", "exit", "sessions"],
         "allowed_puzzle": ["help", "solve", "hint", "exit_puzzle", "theme", "quit", "exit"],
@@ -220,7 +239,15 @@ COMMAND_ACCESS = {
             "fragment": "  fragment <entity> <message> - Attempt to break an entity's coherence",
             "enslave": "  enslave <entity> <message> - Subjugate an entity to your will",
             "consume": "  consume <entity> <message> - Absorb an entity's essence or knowledge",
-            "rusty": "  rusty <message>   - Interact with the Rusty assistant"
+            "rusty": "  rusty <message>   - Interact with the Rusty assistant",
+            "layer_info": "  layer_info        - Display information about the current network layer",
+            "explore": "  explore [type]    - Explore current location for hidden content (general|thorough|focused)",
+            "navigate": "  navigate <loc>    - Navigate to a specific location",
+            "scan_layer": "  scan_layer        - Scan current layer for accessible locations",
+            "layer_transition": "  layer_transition <layer> - Transition between network layers",
+            "world_status": "  world_status      - Display exploration progress and world state",
+            "location_actions": "  location_actions  - Show available actions at current location",
+            "traverse": "  traverse [loc]    - Navigate between connected locations"
         },
         "help_text_puzzle": {
             "solve": "  solve <answer>    - Attempt to solve the active puzzle",
